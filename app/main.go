@@ -90,7 +90,7 @@ func handleConnection(conn net.Conn,storage map[string]Value) {
 	}
 }
 
-func parseID(id string) (int,int) {
+func parseEntryID(id string) (int,int) {
 	parts := strings.Split(id, "-")
 	ms, _ := strconv.Atoi(parts[0])
 	seq, _ := strconv.Atoi(parts[1])
@@ -173,13 +173,13 @@ func handleXAdd(conn net.Conn, parts []string, storage map[string]Value) {
 		conn.Write([]byte("-ERR The ID specified in XADD must be greater than 0-0\r\n"))
 		return
 	}
-	ms, seq := parseID(id)
+	ms, seq := parseEntryID(id)
 	val, ok := storage[key]
 	if ok {
 		stream := val.(Stream)
 		if len(stream.entries) > 0 {
 			lastEntry := stream.entries[len(stream.entries)-1]
-			lastMs, lastSeq := parseID(lastEntry.id)
+			lastMs, lastSeq := parseEntryID(lastEntry.id)
 			if ms < lastMs || (ms == lastMs && seq <= lastSeq) {
 				conn.Write([]byte("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"))
 				return
