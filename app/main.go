@@ -111,7 +111,12 @@ func handleConnection(conn net.Conn,storage *Storage) {
 	}
 }
 
-func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool) {
+func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard bool) {
+	if id == "*" {
+		seqIsWildcard = true
+		msIsWildcard = true
+		return
+	}
 	parts := strings.Split(id, "-")
 	ms, _ = strconv.Atoi(parts[0])
 	if parts[1] == "*" {
@@ -198,15 +203,18 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 		conn.Write([]byte("-ERR The ID specified in XADD must be greater than 0-0\r\n"))
 		return
 	}
-	ms, seq, seqIsWildcard := parseEntryID(id)
+	ms, seq, seqIsWildcard, msIsWildcard := parseEntryID(id)
 	val, ok := storage.Get(key)
+	if msIsWildcard {
+		ms = int(time.Now().UnixMilli())
+	}
 	if seqIsWildcard {
 		seq = 0
 		if ok {
 			stream := val.(Stream)
 			if len(stream.entries) > 0 {
 				lastEntry := stream.entries[len(stream.entries)-1]
-				lastMs, lastSeq, _ := parseEntryID(lastEntry.id)
+				lastMs, lastSeq, _, _ := parseEntryID(lastEntry.id)
 				if lastMs == ms {
 					seq = lastSeq + 1
 				}
@@ -221,7 +229,7 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 		stream := val.(Stream)
 		if len(stream.entries) > 0 {
 			lastEntry := stream.entries[len(stream.entries)-1]
-			lastMs, lastSeq, _ := parseEntryID(lastEntry.id)
+			lastMs, lastSeq, _, _ := parseEntryID(lastEntry.id)
 			if ms < lastMs || (ms == lastMs && seq <= lastSeq) {
 				conn.Write([]byte("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"))
 				return
