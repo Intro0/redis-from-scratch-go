@@ -200,6 +200,23 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 	}
 	ms, seq, seqIsWildcard := parseEntryID(id)
 	val, ok := storage.Get(key)
+	if seqIsWildcard {
+		seq = 0
+		if ok {
+			stream := val.(Stream)
+			if len(stream.entries) > 0 {
+				lastEntry := stream.entries[len(stream.entries)-1]
+				lastMs, lastSeq, _ := parseEntryID(lastEntry.id)
+				if lastMs == ms {
+					seq = lastSeq + 1
+				}
+			}
+		}
+		if ms == 0 && seq == 0 {
+			seq = 1
+		}
+		id = fmt.Sprintf("%d-%d", ms, seq)
+	}
 	if ok {
 		stream := val.(Stream)
 		if len(stream.entries) > 0 {
