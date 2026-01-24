@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"sync"
 )
 
 type Value interface {
@@ -30,14 +31,34 @@ type Stream struct {
 	entries []StreamEntry
 }
 
+// Storage struct for Mutex Use
+type Storage struct {
+	data map[string]Value
+	mu sync.Mutex
+}
+
+func (s *Storage) Get(key string) (Value, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	val, ok := s.data[key]
+	return val, ok
+}
+
+func (s *Storage) Set(key string, val Value) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data[key] = val
+}
+
 func (s Stream) Type() string { return "stream" }
 
 func main() {
 
-	// storage
-	storage := make(map[string]Value)
+	storage := &Storage{
+		data : make(map[string]Value),
+	}
 
-	// listener
+	// tcp server
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
@@ -57,7 +78,7 @@ func main() {
 }
 
 // handles one client
-func handleConnection(conn net.Conn,storage map[string]Value) {
+func handleConnection(conn net.Conn,storage *Storage) {
 	for {
 		buf:=make([]byte, 1024)
 		n,err := conn.Read(buf)
@@ -107,7 +128,7 @@ func handleEcho(conn net.Conn, parts []string) {
 	conn.Write([]byte(response))
 }
 
-func handleSet(conn net.Conn, parts []string, storage map[string]Value) {
+func handleSet(conn net.Conn, parts []string, storage *Storage) {
 	expiry := time.Time{}
 	if len(parts) > 9 {
 		switch strings.ToUpper(parts[8]) {
@@ -129,13 +150,13 @@ func handleSet(conn net.Conn, parts []string, storage map[string]Value) {
 	}
 	key := parts[4]
 	value := parts[6]
-	storage[key] = StringEntry{value: value, expiry: expiry}
+	storage.Set(key, StringEntry{value: value, expiry: expiry})
 	conn.Write([]byte("+OK\r\n"))
 }
 
-func handleGet(conn net.Conn, parts []string, storage map[string]Value) {
+func handleGet(conn net.Conn, parts []string, storage *Storage) {
 	key := parts[4]
-	val, ok := storage[key]
+	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("value not found")
 		conn.Write([]byte("$-1\r\n"))
@@ -155,9 +176,9 @@ func handleGet(conn net.Conn, parts []string, storage map[string]Value) {
 	conn.Write([]byte(response))
 }
 
-func handleType(conn net.Conn, parts []string, storage map[string]Value) {
+func handleType(conn net.Conn, parts []string, storage *Storage) {
 	key := parts[4]
-	val, ok := storage[key]
+	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("key not found")
 		conn.Write([]byte("+none\r\n"))
@@ -166,7 +187,7 @@ func handleType(conn net.Conn, parts []string, storage map[string]Value) {
 	conn.Write([]byte("+" + val.Type() + "\r\n"))
 }
 
-func handleXAdd(conn net.Conn, parts []string, storage map[string]Value) {
+func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 	key := parts[4]
 	id := parts[6]
 	if id == "0-0" {
@@ -174,7 +195,7 @@ func handleXAdd(conn net.Conn, parts []string, storage map[string]Value) {
 		return
 	}
 	ms, seq := parseEntryID(id)
-	val, ok := storage[key]
+	val, ok := storage.Get(key)
 	if ok {
 		stream := val.(Stream)
 		if len(stream.entries) > 0 {
@@ -192,11 +213,11 @@ func handleXAdd(conn net.Conn, parts []string, storage map[string]Value) {
 	}
 	entry := StreamEntry{id: id, values: values}
 	if !ok {
-		storage[key] = Stream{entries: []StreamEntry{entry}}
+		storage.Set(key, Stream{entries: []StreamEntry{entry}})
 	} else {
 		stream := val.(Stream)
 		stream.entries = append(stream.entries, entry)
-		storage[key] = stream
+		storage.Set(key, stream)
 	}
 	response := fmt.Sprintf("$%d\r\n%s\r\n", len(id), id)
 	conn.Write([]byte(response))
