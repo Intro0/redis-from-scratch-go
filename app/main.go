@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 	"sync"
+	"math"
 )
 
 type Value interface {
@@ -77,7 +78,6 @@ func main() {
 	}
 }
 
-// handles one client
 func handleConnection(conn net.Conn,storage *Storage) {
 	for {
 		buf:=make([]byte, 1024)
@@ -105,6 +105,8 @@ func handleConnection(conn net.Conn,storage *Storage) {
 				handleType(conn, parts, storage)
 			case "xadd":
 				handleXAdd(conn, parts, storage)
+			case "xrange":
+				handleXRange(conn, parts, storage)
 			default:
 				fmt.Println("Unknown Syntax")
 		}
@@ -126,6 +128,23 @@ func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard 
 	}
 	return
 }
+
+func parseRangeID(id string, isEnd bool) (ms int, seq int) {
+	if strings.Contains(id, "-") {
+		parts := strings.Split(id, "-")
+		ms, _ = strconv.Atoi(parts[0])
+		seq, _ = strconv.Atoi(parts[1])
+		return
+	}
+	ms, _ = strconv.Atoi(id)
+	if isEnd {
+		seq = math.MaxInt
+	} else {
+		seq = 0
+	}
+	return
+}
+
 
 func handlePing(conn net.Conn) {
 	conn.Write([]byte("+PONG\r\n"))
@@ -250,4 +269,41 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 	}
 	response := fmt.Sprintf("$%d\r\n%s\r\n", len(id), id)
 	conn.Write([]byte(response))
+}
+
+func handleXRange(conn net.Conn, parts []string, storage *Storage) {
+	// first parse the range
+	key := parts[4]
+	startID := parts[6]
+	endID := parts[8]
+	// then retrieve the stream from storage
+	val, ok := storage.Get(key)
+	if !ok {
+		fmt.Println("key not found")
+		conn.Write([]byte("+none\r\n"))
+		return
+	}
+	stream := val.(Stream)
+	startMS, startSeq := parseRangeID(startID, false)
+	endMS, endSeq := parseRangeID(endID, true)
+	var results []StreamEntry
+	for _, entry := range stream.entries {
+		// check if entry.id is within startID and endID
+		entryMS, entrySeq, _, _ := parseEntryID(entry.id)
+		if (entryMS > startMS || (entryMS == startMS && entrySeq >= startSeq)) &&
+		   (entryMS < endMS || (entryMS == endMS && entrySeq <= endSeq)) {
+			// entry is within range, add to results
+			results = append(results,entry)
+		}
+	}
+	// finally format and send the response
+	var response strings.Builder
+	fmt.Fprintf(&response, "*%d\r\n", len(results))
+	for _, entry := range results {
+		fmt.Fprintf(&response, "*2\r\n$%d\r\n%s\r\n*%d\r\n", len(entry.id), entry.id, len(entry.values)*2)
+		for k, v := range entry.values {
+			fmt.Fprintf(&response, "$%d\r\n%s\r\n$%d\r\n%s\r\n", len(k), k, len(v), v)
+		}
+	}
+	conn.Write([]byte(response.String()))
 }
