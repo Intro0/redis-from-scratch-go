@@ -130,6 +130,16 @@ func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard 
 }
 
 func parseRangeID(id string, isEnd bool) (ms int, seq int) {
+	if id == "-" {
+		ms = 0
+		seq = 0
+		return
+	}
+	if id == "+" {
+		ms = math.MaxInt
+		seq = math.MaxInt
+		return
+	}
 	if strings.Contains(id, "-") {
 		parts := strings.Split(id, "-")
 		ms, _ = strconv.Atoi(parts[0])
