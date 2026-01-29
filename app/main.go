@@ -12,13 +12,14 @@ import (
 	"time"
 )
 
+// Value interface allows storage to hold different Redis data types (strings, streams)
 type Value interface {
 	Type() string
 }
 
 type StringEntry struct {
 		value string
-		expiry time.Time
+		expiry time.Time // zero value means no expiration
 	}
 
 func (e StringEntry) Type() string { return "string" }
@@ -32,7 +33,7 @@ type Stream struct {
 	entries []StreamEntry
 }
 
-// Storage struct for Mutex Use
+// Storage wraps data map with mutex for concurrent client access
 type Storage struct {
 	data map[string]Value
 	mu sync.Mutex
@@ -59,22 +60,19 @@ func main() {
 		data : make(map[string]Value),
 	}
 
-	// tcp server
 	l, err := net.Listen("tcp", "0.0.0.0:6379")
 	if err != nil {
 		fmt.Println("Failed to bind to port 6379")
 		os.Exit(1)
 	}
 
-	// main loop
 	for {
 		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		// handle multiple clients thru concurrency
-		go handleConnection(conn,storage)
+		go handleConnection(conn,storage) // goroutine per client for concurrent connections
 	}
 }
 
@@ -83,15 +81,13 @@ func handleConnection(conn net.Conn,storage *Storage) {
 		buf:=make([]byte, 1024)
 		n,err := conn.Read(buf)
 		if err != nil {
-			// check if client left so we dont need to print error
 			if err == io.EOF {
-				break
+				break // client disconnected gracefully
 			}
 			fmt.Println("Error reading from connection: ", err.Error())
 			break
 		}
-		// parses arguments from input
-		parts := strings.Split(string(buf[:n]),"\r\n")
+		parts := strings.Split(string(buf[:n]),"\r\n") // RESP protocol splits on \r\n
 		switch strings.ToLower(parts[2]) {
 			case "ping":
 				handlePing(conn)
@@ -115,6 +111,7 @@ func handleConnection(conn net.Conn,storage *Storage) {
 	}
 }
 
+// parseEntryID parses stream entry IDs like "1526985054069-0" or wildcards like "*" or "123-*"
 func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard bool) {
 	if id == "*" {
 		seqIsWildcard = true
@@ -131,6 +128,7 @@ func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard 
 	return
 }
 
+// parseRangeID parses XRANGE boundaries: "-" means start of stream, "+" means end of stream
 func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 	if id == "-" {
 		ms = 0
@@ -150,7 +148,7 @@ func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 	}
 	ms, _ = strconv.Atoi(id)
 	if isEnd {
-		seq = math.MaxInt
+		seq = math.MaxInt // include all sequences when used as end boundary
 	} else {
 		seq = 0
 	}
@@ -236,9 +234,11 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 	}
 	ms, seq, seqIsWildcard, msIsWildcard := parseEntryID(id)
 	val, ok := storage.Get(key)
+	// Auto-generate ms from current time if "*" wildcard
 	if msIsWildcard {
 		ms = int(time.Now().UnixMilli())
 	}
+	// Auto-generate seq: increment from last entry if same ms, else start at 0 (or 1 for 0-*)
 	if seqIsWildcard {
 		seq = 0
 		if ok {
@@ -252,10 +252,11 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 			}
 		}
 		if ms == 0 && seq == 0 {
-			seq = 1
+			seq = 1 // 0-0 is reserved, minimum auto-generated ID is 0-1
 		}
 		id = fmt.Sprintf("%d-%d", ms, seq)
 	}
+	// Stream IDs must be monotonically increasing
 	if ok {
 		stream := val.(Stream)
 		if len(stream.entries) > 0 {
@@ -267,6 +268,7 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 			}
 		}
 	}
+	// Parse field-value pairs: RESP interleaves lengths, so step by 4 (len, key, len, val)
 	values := make(map[string]string)
 	for i := 8; i+2 < len(parts); i += 4 {
 		values[parts[i]] = parts[i+2]
@@ -284,11 +286,9 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 }
 
 func handleXRange(conn net.Conn, parts []string, storage *Storage) {
-	// first parse the range
 	key := parts[4]
 	startID := parts[6]
 	endID := parts[8]
-	// then retrieve the stream from storage
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("key not found")
@@ -300,15 +300,13 @@ func handleXRange(conn net.Conn, parts []string, storage *Storage) {
 	endMS, endSeq := parseRangeID(endID, true)
 	var results []StreamEntry
 	for _, entry := range stream.entries {
-		// check if entry.id is within startID and endID
 		entryMS, entrySeq, _, _ := parseEntryID(entry.id)
+		// XRANGE is inclusive on both ends
 		if (entryMS > startMS || (entryMS == startMS && entrySeq >= startSeq)) &&
 		   (entryMS < endMS || (entryMS == endMS && entrySeq <= endSeq)) {
-			// entry is within range, add to results
 			results = append(results,entry)
 		}
 	}
-	// finally format and send the response
 	var response strings.Builder
 	fmt.Fprintf(&response, "*%d\r\n", len(results))
 	for _, entry := range results {
@@ -325,10 +323,12 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 		conn.Write([]byte("-ERR Syntax error\r\n"))
 		return
 	}
+	// RESP format interleaves length prefixes with values, so skip every other element
 	var args []string
 	for i:=6; i < len(parts); i += 2 {
 		args = append(args, parts[i])
 	}
+	// XREAD args are: key1 key2 ... keyN id1 id2 ... idN (keys first, then IDs)
 	numStreams := len(args) / 2
 	keys := args[:numStreams]
 	IDs := args[numStreams:]
@@ -346,6 +346,7 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 		var results []StreamEntry
 		for _, entry := range stream.entries {
 			entryMS, entrySeq := parseRangeID(entry.id, false)
+			// XREAD is exclusive (entries strictly greater than ID), unlike XRANGE which is inclusive
 			if (entryMS > startMS || (entryMS == startMS && entrySeq > startSeq)) {
 				results = append(results,entry)
 			}
