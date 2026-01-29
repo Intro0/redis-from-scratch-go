@@ -325,32 +325,45 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 		conn.Write([]byte("-ERR Syntax error\r\n"))
 		return
 	}
-	key := parts[6]
-	ID := parts[8]
-	val, ok := storage.Get(key)
-	if !ok {
-		fmt.Println("key not found")
-		conn.Write([]byte("+none\r\n"))
-		return
+	var args []string
+	for i:=6; i < len(parts); i += 2 {
+		args = append(args, parts[i])
 	}
-	stream := val.(Stream)
-	startMS, startSeq := parseRangeID(ID, false)
-	var results []StreamEntry
-	for _, entry := range stream.entries {
-		entryMS, entrySeq := parseRangeID(entry.id, false)
-		if (entryMS > startMS || (entryMS == startMS && entrySeq > startSeq)) {
-			results = append(results,entry)
+	numStreams := len(args) / 2
+	keys := args[:numStreams]
+	IDs := args[numStreams:]
+	var allResults [][]StreamEntry
+	for i,key := range keys {
+		ID := IDs[i]
+		val, ok := storage.Get(key)
+		if !ok {
+			fmt.Println("key not found")
+			conn.Write([]byte("+none\r\n"))
+			return
 		}
+		stream := val.(Stream)
+		startMS, startSeq := parseRangeID(ID, false)
+		var results []StreamEntry
+		for _, entry := range stream.entries {
+			entryMS, entrySeq := parseRangeID(entry.id, false)
+			if (entryMS > startMS || (entryMS == startMS && entrySeq > startSeq)) {
+				results = append(results,entry)
+			}
+		}
+		allResults = append(allResults, results)
 	}
 	var response strings.Builder
-	fmt.Fprintf(&response, "*1\r\n")
-	fmt.Fprintf(&response, "*2\r\n")
-	fmt.Fprintf(&response, "$%d\r\n%s\r\n", len(key), key)
-	fmt.Fprintf(&response, "*%d\r\n", len(results))
-	for _, entry := range results {
-		fmt.Fprintf(&response, "*2\r\n$%d\r\n%s\r\n*%d\r\n", len(entry.id), entry.id, len(entry.values)*2)
-		for k, v := range entry.values {
-			fmt.Fprintf(&response, "$%d\r\n%s\r\n$%d\r\n%s\r\n", len(k), k, len(v), v)
+	fmt.Fprintf(&response, "*%d\r\n", len(keys))
+	for i, key := range keys {
+		results := allResults[i]
+		fmt.Fprintf(&response, "*2\r\n")
+		fmt.Fprintf(&response, "$%d\r\n%s\r\n", len(key), key)
+		fmt.Fprintf(&response, "*%d\r\n", len(results))
+		for _, entry := range results {
+			fmt.Fprintf(&response, "*2\r\n$%d\r\n%s\r\n*%d\r\n", len(entry.id), entry.id, len(entry.values)*2)
+			for k, v := range entry.values {
+				fmt.Fprintf(&response, "$%d\r\n%s\r\n$%d\r\n%s\r\n", len(k), k, len(v), v)
+			}
 		}
 	}
 	conn.Write([]byte(response.String()))
