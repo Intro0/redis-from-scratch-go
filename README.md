@@ -20,7 +20,7 @@ A Redis server built from scratch in Go as part of the [CodeCrafters "Build Your
 |---------|-------------|
 | `XADD` | Appends entries to a stream with explicit or auto-generated entry IDs |
 | `XRANGE` | Queries a range of entries from a stream (inclusive, supports `-` and `+`) |
-| `XREAD` | Reads entries from a stream starting after a given ID (exclusive) |
+| `XREAD` | Reads entries from one or more streams starting after given IDs (exclusive) |
 
 Stream implementation includes:
 - Entry ID validation (must be greater than `0-0`)
@@ -29,6 +29,7 @@ Stream implementation includes:
 - Fully auto-generated IDs (e.g., `*`)
 - Multiple key-value pairs per stream entry
 - Range queries with special `-` (start) and `+` (end) characters
+- Multi-stream reads with XREAD
 
 ## Technical Implementation
 
@@ -88,7 +89,7 @@ type Stream struct {
 - [x] Implement SET & GET commands - Key-value storage
 - [x] Expiry - TTL with PX/EX options
 
-### Streams Extension (10/14)
+### Streams Extension (11/14)
 - [x] The TYPE command - Data type introspection
 - [x] Create a stream - XADD command implementation
 - [x] Validating entry IDs - ID ordering enforcement
@@ -98,7 +99,7 @@ type Stream struct {
 - [x] Query with `-` - Start from beginning of stream
 - [x] Query with `+` - End at latest entry
 - [x] Query single stream using XREAD - Exclusive read from single stream
-- [ ] Query multiple streams using XREAD
+- [x] Query multiple streams using XREAD - Read from multiple streams in one command
 - [ ] Blocking reads
 - [ ] Blocking reads without timeout
 - [ ] Blocking reads using `$`
