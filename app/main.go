@@ -155,6 +155,33 @@ func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 	return
 }
 
+func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults [][]StreamEntry, hasResult bool) {
+	for i,key := range keys {
+		ID := IDs[i]
+		val, ok := storage.Get(key)
+		if !ok {
+			continue
+		}
+		stream := val.(Stream)
+		startMS, startSeq := parseRangeID(ID, false)
+		var results []StreamEntry
+		for _, entry := range stream.entries {
+			entryMS, entrySeq := parseRangeID(entry.id, false)
+			// XREAD is exclusive (entries strictly greater than ID), unlike XRANGE which is inclusive
+			if (entryMS > startMS || (entryMS == startMS && entrySeq > startSeq)) {
+				results = append(results,entry)
+			}
+		}
+		allResults = append(allResults, results)
+	}
+	for _, results := range allResults {
+	    if len(results) > 0 {
+	        hasResult = true
+	        break
+	    }
+	}
+	return
+}
 
 func handlePing(conn net.Conn) {
 	conn.Write([]byte("+PONG\r\n"))
@@ -319,40 +346,40 @@ func handleXRange(conn net.Conn, parts []string, storage *Storage) {
 }
 
 func handleXRead(conn net.Conn, parts []string, storage *Storage) {
-	if strings.ToUpper(parts[4]) != "STREAMS" {
-		conn.Write([]byte("-ERR Syntax error\r\n"))
-		return
+	blockTimeout := -1
+	startIndex := 6
+
+	if strings.ToUpper(parts[4]) == "BLOCK" {
+		blockTimeout,_ = strconv.Atoi(parts[6])
+		startIndex = 10
 	}
 	// RESP format interleaves length prefixes with values, so skip every other element
 	var args []string
-	for i:=6; i < len(parts); i += 2 {
+	for i:=startIndex; i < len(parts); i += 2 {
 		args = append(args, parts[i])
 	}
 	// XREAD args are: key1 key2 ... keyN id1 id2 ... idN (keys first, then IDs)
 	numStreams := len(args) / 2
 	keys := args[:numStreams]
 	IDs := args[numStreams:]
-	var allResults [][]StreamEntry
-	for i,key := range keys {
-		ID := IDs[i]
-		val, ok := storage.Get(key)
-		if !ok {
-			fmt.Println("key not found")
-			conn.Write([]byte("+none\r\n"))
-			return
-		}
-		stream := val.(Stream)
-		startMS, startSeq := parseRangeID(ID, false)
-		var results []StreamEntry
-		for _, entry := range stream.entries {
-			entryMS, entrySeq := parseRangeID(entry.id, false)
-			// XREAD is exclusive (entries strictly greater than ID), unlike XRANGE which is inclusive
-			if (entryMS > startMS || (entryMS == startMS && entrySeq > startSeq)) {
-				results = append(results,entry)
+	allResults, hasResults := getStreamEntries(keys,IDs,storage)
+
+	if !hasResults && blockTimeout >= 0 {
+		deadline := time.Now().Add(time.Duration(blockTimeout) * time.Millisecond)
+		for time.Now().Before(deadline) {
+			time.Sleep(50 * time.Millisecond)
+			allResults, hasResults = getStreamEntries(keys,IDs,storage)
+			if hasResults {
+				break
 			}
 		}
-		allResults = append(allResults, results)
 	}
+
+	if !hasResults {
+		conn.Write([]byte("*-1\r\n"))
+		return
+	}
+
 	var response strings.Builder
 	fmt.Fprintf(&response, "*%d\r\n", len(keys))
 	for i, key := range keys {
