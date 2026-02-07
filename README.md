@@ -100,8 +100,8 @@ type Stream struct {
 - [x] Query with `+` - End at latest entry
 - [x] Query single stream using XREAD - Exclusive read from single stream
 - [x] Query multiple streams using XREAD - Read from multiple streams in one command
-- [ ] Blocking reads
-- [ ] Blocking reads without timeout
+- [x] Blocking reads - XREAD with BLOCK timeout support
+- [x] Blocking reads without timeout - XREAD with BLOCK 0 for indefinite blocking
 - [ ] Blocking reads using `$`
 
 ## Running the Server
