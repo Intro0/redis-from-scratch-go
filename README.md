@@ -107,6 +107,26 @@ type Stream struct {
 - [x] Blocking reads without timeout - XREAD with BLOCK 0 for indefinite blocking
 - [x] Blocking reads using `$` - XREAD with `$` to only return entries added after command is sent
 
+### Replication Extension (0/18)
+- [ ] Configure listening port
+- [ ] The INFO command
+- [ ] The INFO command on a replica
+- [ ] Initial replication ID and offset
+- [ ] Send handshake (1/3)
+- [ ] Send handshake (2/3)
+- [ ] Send handshake (3/3)
+- [ ] Receive handshake (1/2)
+- [ ] Receive handshake (2/2)
+- [ ] Empty RDB transfer
+- [ ] Single-replica propagation
+- [ ] Multi-replica propagation
+- [ ] Command processing
+- [ ] ACKs with no commands
+- [ ] ACKs with commands
+- [ ] WAIT with no replicas
+- [ ] WAIT with no commands
+- [ ] WAIT with multiple commands
+
 ## Running the Server
 
 ```bash
