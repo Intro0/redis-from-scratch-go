@@ -20,7 +20,7 @@ A Redis server built from scratch in Go as part of the [CodeCrafters "Build Your
 |---------|-------------|
 | `XADD` | Appends entries to a stream with explicit or auto-generated entry IDs |
 | `XRANGE` | Queries a range of entries from a stream (inclusive, supports `-` and `+`) |
-| `XREAD` | Reads entries from one or more streams starting after given IDs (exclusive) |
+| `XREAD` | Reads entries from one or more streams starting after given IDs, with optional blocking (`BLOCK`) and `$` support |
 
 Stream implementation includes:
 - Entry ID validation (must be greater than `0-0`)
@@ -30,6 +30,9 @@ Stream implementation includes:
 - Multiple key-value pairs per stream entry
 - Range queries with special `-` (start) and `+` (end) characters
 - Multi-stream reads with XREAD
+- Blocking reads with configurable timeout (`BLOCK <ms>`)
+- Indefinite blocking with `BLOCK 0`
+- `$` ID support to only receive entries added after the command is sent
 
 ## Technical Implementation
 
@@ -89,7 +92,7 @@ type Stream struct {
 - [x] Implement SET & GET commands - Key-value storage
 - [x] Expiry - TTL with PX/EX options
 
-### Streams Extension (11/14)
+### Streams Extension (14/14)
 - [x] The TYPE command - Data type introspection
 - [x] Create a stream - XADD command implementation
 - [x] Validating entry IDs - ID ordering enforcement
@@ -102,7 +105,7 @@ type Stream struct {
 - [x] Query multiple streams using XREAD - Read from multiple streams in one command
 - [x] Blocking reads - XREAD with BLOCK timeout support
 - [x] Blocking reads without timeout - XREAD with BLOCK 0 for indefinite blocking
-- [ ] Blocking reads using `$`
+- [x] Blocking reads using `$` - XREAD with `$` to only return entries added after command is sent
 
 ## Running the Server
 
@@ -137,8 +140,31 @@ OK
 > XADD mystream 1-0 field1 value1
 "1-0"
 
+> XADD mystream 1-1 field2 value2
+"1-1"
+
 > TYPE mystream
 stream
+
+> XRANGE mystream - +
+1) 1) "1-0"
+   2) 1) "field1"
+      2) "value1"
+2) 1) "1-1"
+   2) 1) "field2"
+      2) "value2"
+
+> XREAD STREAMS mystream 0-0
+1) 1) "mystream"
+   2) 1) 1) "1-0"
+         2) 1) "field1"
+            2) "value1"
+      2) 1) "1-1"
+         2) 1) "field2"
+            2) "value2"
+
+# Blocking read (waits for new entries)
+> XREAD BLOCK 5000 STREAMS mystream $
 ```
 
 ## Project Structure
@@ -158,6 +184,7 @@ stream
 - **Concurrency**: Goroutine-based multi-client support
 - **Data Structures**: In-memory key-value store with polymorphic value types
 - **Time-based Logic**: TTL implementation with expiration checking
+- **Blocking I/O**: Polling-based blocking reads with timeout and indefinite wait support
 
 ---
 
