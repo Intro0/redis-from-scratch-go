@@ -346,12 +346,12 @@ func handleXRange(conn net.Conn, parts []string, storage *Storage) {
 }
 
 func handleXRead(conn net.Conn, parts []string, storage *Storage) {
-	blockTimeout := -1
+	blockTimeout := -1 // -1 means non-blocking (no BLOCK flag)
 	startIndex := 6
 
 	if strings.ToUpper(parts[4]) == "BLOCK" {
-		blockTimeout,_ = strconv.Atoi(parts[6])
-		startIndex = 10
+		blockTimeout,_ = strconv.Atoi(parts[6]) // 0 means block indefinitely
+		startIndex = 10                          // BLOCK + ms shifts args forward
 	}
 	// RESP format interleaves length prefixes with values, so skip every other element
 	var args []string
@@ -362,6 +362,7 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 	numStreams := len(args) / 2
 	keys := args[:numStreams]
 	IDs := args[numStreams:]
+	// Resolve "$" to the current last entry ID so the blocking loop only returns future entries
 	for i, id := range(IDs) {
 		if id == "$" {
 			val, ok := storage.Get(keys[i])
@@ -379,10 +380,11 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 	}
 	allResults, hasResults := getStreamEntries(keys,IDs,storage)
 
+	// Poll for new entries until timeout or data arrives; BLOCK 0 waits indefinitely
 	if !hasResults && blockTimeout >= 0 {
 		deadline := time.Now().Add(time.Duration(blockTimeout) * time.Millisecond)
 		if blockTimeout == 0 {
-			deadline = time.Now().Add(time.Hour * 24 * 365 * 100)
+			deadline = time.Now().Add(time.Hour * 24 * 365 * 100) // effectively infinite
 		}
 		for time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
