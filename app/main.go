@@ -362,6 +362,21 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 	numStreams := len(args) / 2
 	keys := args[:numStreams]
 	IDs := args[numStreams:]
+	for i, id := range(IDs) {
+		if id == "$" {
+			val, ok := storage.Get(keys[i])
+			if ok {
+				stream := val.(Stream)
+				if len(stream.entries) > 0 {
+					IDs[i] = stream.entries[len(stream.entries)-1].id
+				} else {
+					IDs[i] = "0-0"
+				}
+			} else {
+				IDs[i] = "0-0"
+			}
+		}
+	}
 	allResults, hasResults := getStreamEntries(keys,IDs,storage)
 
 	if !hasResults && blockTimeout >= 0 {
