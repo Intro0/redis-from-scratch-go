@@ -366,6 +366,9 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 
 	if !hasResults && blockTimeout >= 0 {
 		deadline := time.Now().Add(time.Duration(blockTimeout) * time.Millisecond)
+		if blockTimeout == 0 {
+			deadline = time.Now().Add(time.Hour * 24 * 365 * 100)
+		}
 		for time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
 			allResults, hasResults = getStreamEntries(keys,IDs,storage)
