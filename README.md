@@ -54,7 +54,7 @@ Stream implementation includes:
 
 ### Key Components
 
-- **TCP Server**: Listens on Redis default port 6379
+- **TCP Server**: Listens on a configurable port (default 6379, override with `--port`)
 - **Concurrent Client Handling**: Each client connection is handled in a separate goroutine, allowing multiple simultaneous clients
 - **RESP Protocol**: Parses Redis Serialization Protocol for command parsing and response formatting
 - **Type System**: Polymorphic value storage using Go interfaces (`StringEntry`, `Stream`)
@@ -107,8 +107,8 @@ type Stream struct {
 - [x] Blocking reads without timeout - XREAD with BLOCK 0 for indefinite blocking
 - [x] Blocking reads using `$` - XREAD with `$` to only return entries added after command is sent
 
-### Replication Extension (0/18)
-- [ ] Configure listening port
+### Replication Extension (1/18)
+- [x] Configure listening port
 - [ ] The INFO command
 - [ ] The INFO command on a replica
 - [ ] Initial replication ID and offset
@@ -130,11 +130,14 @@ type Stream struct {
 ## Running the Server
 
 ```bash
-# Start the Redis server
+# Start the Redis server (default port 6379)
 ./your_program.sh
 
+# Start on a custom port
+./your_program.sh --port 6380
+
 # Or run directly with Go
-go run app/main.go
+go run app/main.go --port 6380
 ```
 
 ## Example Usage
