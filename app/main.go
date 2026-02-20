@@ -109,6 +109,8 @@ func handleConnection(conn net.Conn,storage *Storage) {
 				handleXRange(conn, parts, storage)
 			case "xread":
 				handleXRead(conn, parts, storage)
+			case "info":
+				handleInfo(conn)
 			default:
 				fmt.Println("Unknown Syntax")
 		}
@@ -419,4 +421,8 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 		}
 	}
 	conn.Write([]byte(response.String()))
+}
+
+func handleInfo(conn net.Conn) {
+	conn.Write([]byte("$11\r\nrole:master\r\n"))
 }
