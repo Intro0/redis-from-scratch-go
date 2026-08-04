@@ -11,12 +11,11 @@ type Value interface {
 
 type StringEntry struct {
 	value  string
-	expiry time.Time // zero value means no expiration
+	expiry time.Time
 }
 
 func (e StringEntry) Type() string { return "string" }
 
-// Storage wraps data map with mutex for concurrent client access
 type Storage struct {
 	data map[string]Value
 	mu   sync.Mutex
