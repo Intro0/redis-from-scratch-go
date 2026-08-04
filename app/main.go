@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"math"
@@ -8,22 +9,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
-	"flag"
 )
-
-// Value interface allows storage to hold different Redis data types (strings, streams)
-type Value interface {
-	Type() string
-}
-
-type StringEntry struct {
-		value string
-		expiry time.Time // zero value means no expiration
-	}
-
-func (e StringEntry) Type() string { return "string" }
 
 type StreamEntry struct {
 	id string
@@ -34,31 +21,12 @@ type Stream struct {
 	entries []StreamEntry
 }
 
-// Storage wraps data map with mutex for concurrent client access
-type Storage struct {
-	data map[string]Value
-	mu sync.Mutex
-}
-
-func (s *Storage) Get(key string) (Value, bool) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	val, ok := s.data[key]
-	return val, ok
-}
-
-func (s *Storage) Set(key string, val Value) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.data[key] = val
-}
-
 func (s Stream) Type() string { return "stream" }
 
 func main() {
 
 	storage := &Storage{
-		data : make(map[string]Value),
+		data: make(map[string]Value),
 	}
 
 	port := flag.Int("port", 6379, "Port to listen on")
@@ -76,14 +44,14 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn,storage) // goroutine per client for concurrent connections
+		go handleConnection(conn, storage) // goroutine per client for concurrent connections
 	}
 }
 
-func handleConnection(conn net.Conn,storage *Storage) {
+func handleConnection(conn net.Conn, storage *Storage) {
 	for {
-		buf:=make([]byte, 1024)
-		n,err := conn.Read(buf)
+		buf := make([]byte, 1024)
+		n, err := conn.Read(buf)
 		if err != nil {
 			if err == io.EOF {
 				break // client disconnected gracefully
@@ -91,28 +59,28 @@ func handleConnection(conn net.Conn,storage *Storage) {
 			fmt.Println("Error reading from connection: ", err.Error())
 			break
 		}
-		parts := strings.Split(string(buf[:n]),"\r\n") // RESP protocol splits on \r\n
+		parts := strings.Split(string(buf[:n]), "\r\n") // RESP protocol splits on \r\n
 		switch strings.ToLower(parts[2]) {
-			case "ping":
-				handlePing(conn)
-			case "echo":
-				handleEcho(conn, parts)
-			case "set":
-				handleSet(conn, parts, storage)
-			case "get":
-				handleGet(conn, parts, storage)
-			case "type":
-				handleType(conn, parts, storage)
-			case "xadd":
-				handleXAdd(conn, parts, storage)
-			case "xrange":
-				handleXRange(conn, parts, storage)
-			case "xread":
-				handleXRead(conn, parts, storage)
-			case "info":
-				handleInfo(conn)
-			default:
-				fmt.Println("Unknown Syntax")
+		case "ping":
+			handlePing(conn)
+		case "echo":
+			handleEcho(conn, parts)
+		case "set":
+			handleSet(conn, parts, storage)
+		case "get":
+			handleGet(conn, parts, storage)
+		case "type":
+			handleType(conn, parts, storage)
+		case "xadd":
+			handleXAdd(conn, parts, storage)
+		case "xrange":
+			handleXRange(conn, parts, storage)
+		case "xread":
+			handleXRead(conn, parts, storage)
+		case "info":
+			handleInfo(conn)
+		default:
+			fmt.Println("Unknown Syntax")
 		}
 	}
 }
@@ -162,7 +130,7 @@ func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 }
 
 func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults [][]StreamEntry, hasResult bool) {
-	for i,key := range keys {
+	for i, key := range keys {
 		ID := IDs[i]
 		val, ok := storage.Get(key)
 		if !ok {
@@ -174,17 +142,17 @@ func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults
 		for _, entry := range stream.entries {
 			entryMS, entrySeq := parseRangeID(entry.id, false)
 			// XREAD is exclusive (entries strictly greater than ID), unlike XRANGE which is inclusive
-			if (entryMS > startMS || (entryMS == startMS && entrySeq > startSeq)) {
-				results = append(results,entry)
+			if entryMS > startMS || (entryMS == startMS && entrySeq > startSeq) {
+				results = append(results, entry)
 			}
 		}
 		allResults = append(allResults, results)
 	}
 	for _, results := range allResults {
-	    if len(results) > 0 {
-	        hasResult = true
-	        break
-	    }
+		if len(results) > 0 {
+			hasResult = true
+			break
+		}
 	}
 	return
 }
@@ -203,20 +171,20 @@ func handleSet(conn net.Conn, parts []string, storage *Storage) {
 	expiry := time.Time{}
 	if len(parts) > 9 {
 		switch strings.ToUpper(parts[8]) {
-			case "PX":
-				ms, err := strconv.Atoi(parts[10])
-				if err != nil {
-					fmt.Println("Error with PX: ", err.Error())
-				}
-				expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
-			case "EX":
-				s, err := strconv.Atoi(parts[10])
-				if err != nil {
-					fmt.Println("Error with EX: ", err.Error())
-				}
-				expiry = time.Now().Add(time.Duration(s) * time.Second)
-			default:
-				fmt.Println("invalid syntax")
+		case "PX":
+			ms, err := strconv.Atoi(parts[10])
+			if err != nil {
+				fmt.Println("Error with PX: ", err.Error())
+			}
+			expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
+		case "EX":
+			s, err := strconv.Atoi(parts[10])
+			if err != nil {
+				fmt.Println("Error with EX: ", err.Error())
+			}
+			expiry = time.Now().Add(time.Duration(s) * time.Second)
+		default:
+			fmt.Println("invalid syntax")
 		}
 	}
 	key := parts[4]
@@ -336,8 +304,8 @@ func handleXRange(conn net.Conn, parts []string, storage *Storage) {
 		entryMS, entrySeq, _, _ := parseEntryID(entry.id)
 		// XRANGE is inclusive on both ends
 		if (entryMS > startMS || (entryMS == startMS && entrySeq >= startSeq)) &&
-		   (entryMS < endMS || (entryMS == endMS && entrySeq <= endSeq)) {
-			results = append(results,entry)
+			(entryMS < endMS || (entryMS == endMS && entrySeq <= endSeq)) {
+			results = append(results, entry)
 		}
 	}
 	var response strings.Builder
@@ -356,12 +324,12 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 	startIndex := 6
 
 	if strings.ToUpper(parts[4]) == "BLOCK" {
-		blockTimeout,_ = strconv.Atoi(parts[6]) // 0 means block indefinitely
+		blockTimeout, _ = strconv.Atoi(parts[6]) // 0 means block indefinitely
 		startIndex = 10                          // BLOCK + ms shifts args forward
 	}
 	// RESP format interleaves length prefixes with values, so skip every other element
 	var args []string
-	for i:=startIndex; i < len(parts); i += 2 {
+	for i := startIndex; i < len(parts); i += 2 {
 		args = append(args, parts[i])
 	}
 	// XREAD args are: key1 key2 ... keyN id1 id2 ... idN (keys first, then IDs)
@@ -369,7 +337,7 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 	keys := args[:numStreams]
 	IDs := args[numStreams:]
 	// Resolve "$" to the current last entry ID so the blocking loop only returns future entries
-	for i, id := range(IDs) {
+	for i, id := range IDs {
 		if id == "$" {
 			val, ok := storage.Get(keys[i])
 			if ok {
@@ -384,7 +352,7 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 			}
 		}
 	}
-	allResults, hasResults := getStreamEntries(keys,IDs,storage)
+	allResults, hasResults := getStreamEntries(keys, IDs, storage)
 
 	// Poll for new entries until timeout or data arrives; BLOCK 0 waits indefinitely
 	if !hasResults && blockTimeout >= 0 {
@@ -394,7 +362,7 @@ func handleXRead(conn net.Conn, parts []string, storage *Storage) {
 		}
 		for time.Now().Before(deadline) {
 			time.Sleep(50 * time.Millisecond)
-			allResults, hasResults = getStreamEntries(keys,IDs,storage)
+			allResults, hasResults = getStreamEntries(keys, IDs, storage)
 			if hasResults {
 				break
 			}
