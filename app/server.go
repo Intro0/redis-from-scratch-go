@@ -44,7 +44,7 @@ func handleConnection(conn net.Conn, storage *Storage) {
 
 		switch command {
 		case "ping":
-			handlePing(conn)
+			handlePing(conn, subscribed)
 		case "echo":
 			handleEcho(conn, args)
 		case "set":

@@ -9,7 +9,11 @@ import (
 )
 
 // basic ping command, respong to PING with PONG
-func handlePing(conn net.Conn) {
+func handlePing(conn net.Conn, subscribed bool) {
+	if subscribed {
+		conn.Write([]byte("*2\r\n$4\r\npong\r\n$0\r\n\r\n"))
+		return
+	}
 	conn.Write([]byte("+PONG\r\n"))
 }
 
