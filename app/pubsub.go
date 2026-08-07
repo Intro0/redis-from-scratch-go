@@ -29,14 +29,30 @@ func (p *PubSub) subscribe(channel string, conn net.Conn) {
 	p.channels[channel][conn] = struct{}{}
 }
 
+// removes a client from a channels subscriber set
+func (p *PubSub) unsubscribe(channel string, conn net.Conn) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	subscribers, ok := p.channels[channel]
+	if !ok {
+		return
+	}
+	delete(subscribers, conn)
+
+	if len(subscribers) == 0 {
+		delete(p.channels, channel)
+	}
+}
+
 // returns list of connections subscribed to a channel
 func (p *PubSub) subscribers(channel string) []net.Conn {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	subscribers := make([]net.Conn,0,len(p.channels[channel]))
+	subscribers := make([]net.Conn, 0, len(p.channels[channel]))
 	for conn := range p.channels[channel] {
-		subscribers = append(subscribers,conn)
+		subscribers = append(subscribers, conn)
 	}
 
 	return subscribers
@@ -47,10 +63,26 @@ func handleSubscribe(conn net.Conn, args []string, subscriptions map[string]stru
 	channel := args[1]
 
 	subscriptions[channel] = struct{}{}
-	pubsub.subscribe(channel,conn)
+	pubsub.subscribe(channel, conn)
 
 	response := fmt.Sprintf(
 		"*3\r\n$9\r\nsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
+		len(channel),
+		channel,
+		len(subscriptions),
+	)
+
+	conn.Write([]byte(response))
+}
+
+// acknowledges unsubscription from a channel
+func handleUnsubscribe(conn net.Conn, args []string, subscriptions map[string]struct{}, pubsub *PubSub) {
+	channel := args[1]
+	delete(subscriptions, channel)
+	pubsub.unsubscribe(channel, conn)
+
+	response := fmt.Sprintf(
+		"*3\r\n$11\r\nunsubscribe\r\n$%d\r\n%s\r\n:%d\r\n",
 		len(channel),
 		channel,
 		len(subscriptions),
@@ -78,5 +110,5 @@ func handlePublish(conn net.Conn, args []string, pubsub *PubSub) {
 		sub.Write([]byte(response))
 	}
 
-	conn.Write([]byte(fmt.Sprintf(":%d\r\n", len(subscribers))))
+	fmt.Fprintf(conn, ":%d\r\n", len(subscribers))
 }

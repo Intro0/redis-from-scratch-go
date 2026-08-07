@@ -33,7 +33,7 @@ func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub) {
 
 		// if subscribed, we are in subscribed mode so dont allow other cmds
 		command := strings.ToLower(args[0])
-		if subscribed && command != "subscribe" && command != "ping" {
+		if subscribed && command != "subscribe" && command != "ping" && command != "unsubscribe" {
 			response := fmt.Sprintf(
 				"-ERR Can't execute '%s' in subscribed mode\r\n",
 				command,
@@ -66,6 +66,9 @@ func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub) {
 			subscribed = true
 		case "publish":
 			handlePublish(conn, args, pubsub)
+		case "unsubscribe":
+			handleUnsubscribe(conn, args, subscriptions, pubsub)
+			subscribed = len(subscriptions) > 0
 		default:
 			fmt.Println("Unknown Syntax")
 		}
