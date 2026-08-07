@@ -13,6 +13,7 @@ func main() {
 	storage := &Storage{
 		data: make(map[string]Value),
 	}
+	pubsub := newPubSub()
 
 	// grab port from --port flag, 6379 default
 	port := flag.Int("port", 6379, "Port to listen on")
@@ -32,6 +33,6 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn, storage)
+		go handleConnection(conn, storage, pubsub)
 	}
 }
