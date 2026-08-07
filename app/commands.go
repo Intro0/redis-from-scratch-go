@@ -8,16 +8,19 @@ import (
 	"time"
 )
 
+// basic ping command, respong to PING with PONG
 func handlePing(conn net.Conn) {
 	conn.Write([]byte("+PONG\r\n"))
 }
 
+// basic echo command, echos back input as RESP string
 func handleEcho(conn net.Conn, parts []string) {
 	input := parts[4]
 	response := fmt.Sprintf("$%d\r\n%s\r\n", len(input), input)
 	conn.Write([]byte(response))
 }
 
+// store a string val (not streams), with an option for time expiry (PX for ms, EX for s)
 func handleSet(conn net.Conn, parts []string, storage *Storage) {
 	expiry := time.Time{}
 	if len(parts) > 9 {
@@ -44,6 +47,7 @@ func handleSet(conn net.Conn, parts []string, storage *Storage) {
 	conn.Write([]byte("+OK\r\n"))
 }
 
+// gets value if not expired, only works w/ StringEntry, Streams has XRANGE and XREAD
 func handleGet(conn net.Conn, parts []string, storage *Storage) {
 	key := parts[4]
 	val, ok := storage.Get(key)
@@ -66,6 +70,7 @@ func handleGet(conn net.Conn, parts []string, storage *Storage) {
 	conn.Write([]byte(response))
 }
 
+// returns type for a key, none if missing
 func handleType(conn net.Conn, parts []string, storage *Storage) {
 	key := parts[4]
 	val, ok := storage.Get(key)
@@ -77,6 +82,7 @@ func handleType(conn net.Conn, parts []string, storage *Storage) {
 	conn.Write([]byte("+" + val.Type() + "\r\n"))
 }
 
+// returns metadata
 func handleInfo(conn net.Conn) {
 	conn.Write([]byte("$11\r\nrole:master\r\n"))
 }

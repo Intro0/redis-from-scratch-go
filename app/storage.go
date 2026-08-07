@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// Value interface that reports its data type (StringEntry,Stream)
 type Value interface {
 	Type() string
 }
@@ -16,6 +17,7 @@ type StringEntry struct {
 
 func (e StringEntry) Type() string { return "string" }
 
+// in-memory key-value store with mutex for concurrency
 type Storage struct {
 	data map[string]Value
 	mu   sync.Mutex

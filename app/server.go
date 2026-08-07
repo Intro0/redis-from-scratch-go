@@ -7,6 +7,7 @@ import (
 	"strings"
 )
 
+// handles commands from each client
 func handleConnection(conn net.Conn, storage *Storage) {
 	for {
 		buf := make([]byte, 1024)

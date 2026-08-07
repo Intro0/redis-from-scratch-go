@@ -9,17 +9,20 @@ import (
 	"time"
 )
 
+// single entry in a stream, ordered by timestamp (id)
 type StreamEntry struct {
 	id     string
 	values map[string]string
 }
 
+// ordered collection of stream entries, under one redis key
 type Stream struct {
 	entries []StreamEntry
 }
 
 func (s Stream) Type() string { return "stream" }
 
+// parse a stream ID given in XADD, including wildcard
 func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard bool) {
 	if id == "*" {
 		seqIsWildcard = true
@@ -36,6 +39,8 @@ func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard 
 	return
 }
 
+// parse XRANGE into timestamp and sequence
+// - and + represent start and end of a Stream
 func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 	if id == "-" {
 		return 0, 0
@@ -56,33 +61,7 @@ func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 	return
 }
 
-func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults [][]StreamEntry, hasResult bool) {
-	for i, key := range keys {
-		ID := IDs[i]
-		val, ok := storage.Get(key)
-		if !ok {
-			continue
-		}
-		stream := val.(Stream)
-		startMS, startSeq := parseRangeID(ID, false)
-		var results []StreamEntry
-		for _, entry := range stream.entries {
-			entryMS, entrySeq := parseRangeID(entry.id, false)
-			if entryMS > startMS || (entryMS == startMS && entrySeq > startSeq) {
-				results = append(results, entry)
-			}
-		}
-		allResults = append(allResults, results)
-	}
-	for _, results := range allResults {
-		if len(results) > 0 {
-			hasResult = true
-			break
-		}
-	}
-	return
-}
-
+// appends an entry to a Stream
 func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 	key := parts[4]
 	id := parts[6]
@@ -169,6 +148,33 @@ func handleXRange(conn net.Conn, parts []string, storage *Storage) {
 		}
 	}
 	conn.Write([]byte(response.String()))
+}
+
+func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults [][]StreamEntry, hasResult bool) {
+	for i, key := range keys {
+		ID := IDs[i]
+		val, ok := storage.Get(key)
+		if !ok {
+			continue
+		}
+		stream := val.(Stream)
+		startMS, startSeq := parseRangeID(ID, false)
+		var results []StreamEntry
+		for _, entry := range stream.entries {
+			entryMS, entrySeq := parseRangeID(entry.id, false)
+			if entryMS > startMS || (entryMS == startMS && entrySeq > startSeq) {
+				results = append(results, entry)
+			}
+		}
+		allResults = append(allResults, results)
+	}
+	for _, results := range allResults {
+		if len(results) > 0 {
+			hasResult = true
+			break
+		}
+	}
+	return
 }
 
 func handleXRead(conn net.Conn, parts []string, storage *Storage) {
