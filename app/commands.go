@@ -14,25 +14,25 @@ func handlePing(conn net.Conn) {
 }
 
 // basic echo command, echos back input as RESP string
-func handleEcho(conn net.Conn, parts []string) {
-	input := parts[4]
+func handleEcho(conn net.Conn, args []string) {
+	input := args[1]
 	response := fmt.Sprintf("$%d\r\n%s\r\n", len(input), input)
 	conn.Write([]byte(response))
 }
 
 // store a string val (not streams), with an option for time expiry (PX for ms, EX for s)
-func handleSet(conn net.Conn, parts []string, storage *Storage) {
+func handleSet(conn net.Conn, args []string, storage *Storage) {
 	expiry := time.Time{}
-	if len(parts) > 9 {
-		switch strings.ToUpper(parts[8]) {
+	if len(args) > 3 {
+		switch strings.ToUpper(args[3]) {
 		case "PX":
-			ms, err := strconv.Atoi(parts[10])
+			ms, err := strconv.Atoi(args[4])
 			if err != nil {
 				fmt.Println("Error with PX: ", err.Error())
 			}
 			expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
 		case "EX":
-			s, err := strconv.Atoi(parts[10])
+			s, err := strconv.Atoi(args[4])
 			if err != nil {
 				fmt.Println("Error with EX: ", err.Error())
 			}
@@ -41,15 +41,15 @@ func handleSet(conn net.Conn, parts []string, storage *Storage) {
 			fmt.Println("invalid syntax")
 		}
 	}
-	key := parts[4]
-	value := parts[6]
+	key := args[1]
+	value := args[2]
 	storage.Set(key, StringEntry{value: value, expiry: expiry})
 	conn.Write([]byte("+OK\r\n"))
 }
 
 // gets value if not expired, only works w/ StringEntry, Streams has XRANGE and XREAD
-func handleGet(conn net.Conn, parts []string, storage *Storage) {
-	key := parts[4]
+func handleGet(conn net.Conn, args []string, storage *Storage) {
+	key := args[1]
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("value not found")
@@ -71,8 +71,8 @@ func handleGet(conn net.Conn, parts []string, storage *Storage) {
 }
 
 // returns type for a key, none if missing
-func handleType(conn net.Conn, parts []string, storage *Storage) {
-	key := parts[4]
+func handleType(conn net.Conn, args []string, storage *Storage) {
+	key := args[1]
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("key not found")

@@ -62,9 +62,9 @@ func parseRangeID(id string, isEnd bool) (ms int, seq int) {
 }
 
 // appends an entry to a Stream
-func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
-	key := parts[4]
-	id := parts[6]
+func handleXAdd(conn net.Conn, args []string, storage *Storage) {
+	key := args[1]
+	id := args[2]
 	if id == "0-0" {
 		conn.Write([]byte("-ERR The ID specified in XADD must be greater than 0-0\r\n"))
 		return
@@ -103,8 +103,8 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 		}
 	}
 	values := make(map[string]string)
-	for i := 8; i+2 < len(parts); i += 4 {
-		values[parts[i]] = parts[i+2]
+	for i := 3; i+1 < len(args); i += 2 {
+		values[args[i]] = args[i+1]
 	}
 	entry := StreamEntry{id: id, values: values}
 	if !ok {
@@ -118,10 +118,10 @@ func handleXAdd(conn net.Conn, parts []string, storage *Storage) {
 	conn.Write([]byte(response))
 }
 
-func handleXRange(conn net.Conn, parts []string, storage *Storage) {
-	key := parts[4]
-	startID := parts[6]
-	endID := parts[8]
+func handleXRange(conn net.Conn, args []string, storage *Storage) {
+	key := args[1]
+	startID := args[2]
+	endID := args[3]
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("key not found")
@@ -177,20 +177,17 @@ func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults
 	return
 }
 
-func handleXRead(conn net.Conn, parts []string, storage *Storage) {
+func handleXRead(conn net.Conn, args []string, storage *Storage) {
 	blockTimeout := -1
-	startIndex := 6
-	if strings.ToUpper(parts[4]) == "BLOCK" {
-		blockTimeout, _ = strconv.Atoi(parts[6])
-		startIndex = 10
+	streamsIndex := 1
+	if strings.ToUpper(args[1]) == "BLOCK" {
+		blockTimeout, _ = strconv.Atoi(args[2])
+		streamsIndex = 3
 	}
-	var args []string
-	for i := startIndex; i < len(parts); i += 2 {
-		args = append(args, parts[i])
-	}
-	numStreams := len(args) / 2
-	keys := args[:numStreams]
-	IDs := args[numStreams:]
+	streamArgs := args[streamsIndex+1:]
+	numStreams := len(streamArgs) / 2
+	keys := streamArgs[:numStreams]
+	IDs := streamArgs[numStreams:]
 	for i, id := range IDs {
 		if id == "$" {
 			val, ok := storage.Get(keys[i])

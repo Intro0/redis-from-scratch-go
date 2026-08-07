@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"fmt"
 	"io"
 	"net"
@@ -9,9 +10,11 @@ import (
 
 // handles commands from each client
 func handleConnection(conn net.Conn, storage *Storage) {
+	// buffered reader keeps unread bytes for the next RESP command
+	reader := bufio.NewReader(conn)
+
 	for {
-		buf := make([]byte, 1024)
-		n, err := conn.Read(buf)
+		args, err := readCommand(reader)
 		if err != nil {
 			if err == io.EOF {
 				break
@@ -19,24 +22,28 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			fmt.Println("Error reading from connection: ", err.Error())
 			break
 		}
-		parts := strings.Split(string(buf[:n]), "\r\n")
-		switch strings.ToLower(parts[2]) {
+		if len(args) == 0 {
+			conn.Write([]byte("-ERR empty command\r\n"))
+			continue
+		}
+
+		switch strings.ToLower(args[0]) {
 		case "ping":
 			handlePing(conn)
 		case "echo":
-			handleEcho(conn, parts)
+			handleEcho(conn, args)
 		case "set":
-			handleSet(conn, parts, storage)
+			handleSet(conn, args, storage)
 		case "get":
-			handleGet(conn, parts, storage)
+			handleGet(conn, args, storage)
 		case "type":
-			handleType(conn, parts, storage)
+			handleType(conn, args, storage)
 		case "xadd":
-			handleXAdd(conn, parts, storage)
+			handleXAdd(conn, args, storage)
 		case "xrange":
-			handleXRange(conn, parts, storage)
+			handleXRange(conn, args, storage)
 		case "xread":
-			handleXRead(conn, parts, storage)
+			handleXRead(conn, args, storage)
 		case "info":
 			handleInfo(conn)
 		default:
