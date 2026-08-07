@@ -9,7 +9,7 @@ import (
 )
 
 // handles commands from each client
-func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub) {
+func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub, config *Config) {
 	// buffered reader keeps unread bytes for the next RESP command
 	reader := bufio.NewReader(conn)
 
@@ -69,6 +69,8 @@ func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub) {
 		case "unsubscribe":
 			handleUnsubscribe(conn, args, subscriptions, pubsub)
 			subscribed = len(subscriptions) > 0
+		case "config":
+			handleConfig(conn, args, config)
 		default:
 			fmt.Println("Unknown Syntax")
 		}
