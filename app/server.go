@@ -46,6 +46,8 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			handleXRead(conn, args, storage)
 		case "info":
 			handleInfo(conn)
+		case "subscribe":
+			handleSubscribe(conn, args)
 		default:
 			fmt.Println("Unknown Syntax")
 		}
