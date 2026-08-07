@@ -15,6 +15,7 @@ func handleConnection(conn net.Conn, storage *Storage) {
 
 	// channels subscribed to by this specific client
 	subscriptions := make(map[string]struct{})
+	subscribed := false
 
 	for {
 		args, err := readCommand(reader)
@@ -30,7 +31,18 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			continue
 		}
 
-		switch strings.ToLower(args[0]) {
+		// if subscribed, we are in subscribed mode so dont allow other cmds
+		command := strings.ToLower(args[0])
+		if subscribed && command != "subscribe" && command != "ping" {
+			response := fmt.Sprintf(
+				"-ERR Can't execute '%s' in subscribed mode\r\n",
+				command,
+			)
+			conn.Write([]byte(response))
+			continue
+		}
+
+		switch command {
 		case "ping":
 			handlePing(conn)
 		case "echo":
@@ -51,6 +63,7 @@ func handleConnection(conn net.Conn, storage *Storage) {
 			handleInfo(conn)
 		case "subscribe":
 			handleSubscribe(conn, args, subscriptions)
+			subscribed = true
 		default:
 			fmt.Println("Unknown Syntax")
 		}
