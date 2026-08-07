@@ -13,6 +13,9 @@ func handleConnection(conn net.Conn, storage *Storage) {
 	// buffered reader keeps unread bytes for the next RESP command
 	reader := bufio.NewReader(conn)
 
+	// channels subscribed to by this specific client
+	subscriptions := make(map[string]struct{})
+
 	for {
 		args, err := readCommand(reader)
 		if err != nil {
@@ -47,7 +50,7 @@ func handleConnection(conn net.Conn, storage *Storage) {
 		case "info":
 			handleInfo(conn)
 		case "subscribe":
-			handleSubscribe(conn, args)
+			handleSubscribe(conn, args, subscriptions)
 		default:
 			fmt.Println("Unknown Syntax")
 		}
