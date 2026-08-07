@@ -29,12 +29,17 @@ func (p *PubSub) subscribe(channel string, conn net.Conn) {
 	p.channels[channel][conn] = struct{}{}
 }
 
-// returns number of clients subscribed to a channel
-func (p *PubSub) subscriberCount(channel string) int {
+// returns list of connections subscribed to a channel
+func (p *PubSub) subscribers(channel string) []net.Conn {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	return len(p.channels[channel])
+	subscribers := make([]net.Conn,0,len(p.channels[channel]))
+	for conn := range p.channels[channel] {
+		subscribers = append(subscribers,conn)
+	}
+
+	return subscribers
 }
 
 // acknowledges subscription to a channel
@@ -57,7 +62,21 @@ func handleSubscribe(conn net.Conn, args []string, subscriptions map[string]stru
 // returns number of clients subscribed to the published channel
 func handlePublish(conn net.Conn, args []string, pubsub *PubSub) {
 	channel := args[1]
-	count := pubsub.subscriberCount(channel)
+	message := args[2]
 
-	conn.Write([]byte(fmt.Sprintf(":%d\r\n", count)))
+	subscribers := pubsub.subscribers(channel)
+
+	response := fmt.Sprintf(
+		"*3\r\n$7\r\nmessage\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
+		len(channel),
+		channel,
+		len(message),
+		message,
+	)
+
+	for _, sub := range subscribers {
+		sub.Write([]byte(response))
+	}
+
+	conn.Write([]byte(fmt.Sprintf(":%d\r\n", len(subscribers))))
 }
