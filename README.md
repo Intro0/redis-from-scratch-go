@@ -58,3 +58,24 @@ redis-cli CONFIG GET dir
 - The in-memory store is protected with a mutex and stores multiple value types through a small Go interface.
 - Streams maintain ordered IDs and support range, multi-stream, and blocking reads.
 - Pub/Sub keeps a concurrent channel-to-subscriber registry and sends messages to a snapshot of subscribers.
+
+## Project structure
+
+```text
+app/
+├── main.go       # server startup and configuration
+├── server.go     # client connections and command routing
+├── resp.go       # RESP request parser
+├── storage.go    # in-memory values and synchronization
+├── commands.go   # string commands
+├── streams.go    # stream commands
+├── pubsub.go     # subscriptions and message delivery
+└── config.go     # AOF configuration
+```
+
+## Tests
+
+```bash
+go test ./...
+codecrafters test
+```
