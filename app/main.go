@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
+	"strings"
 )
 
 func main() {
@@ -40,6 +42,16 @@ func main() {
 		appendDirName:  *appendDirName,
 		appendFileName: *appendFileName,
 		appendFsync:    *appendFsync,
+	}
+
+	// checks for appendOnly flag, if so, creates AOF directory with rx all, rwx for owner
+	if strings.ToLower(config.appendOnly) == "yes" {
+		aofDir := filepath.Join(config.dir, config.appendDirName)
+
+		if err := os.MkdirAll(aofDir, 0755); err != nil {
+			fmt.Println("Failed to create AOF directory:", err)
+			os.Exit(1)
+		}
 	}
 
 	// listen for TCP connections on selected port and all network interfaces
