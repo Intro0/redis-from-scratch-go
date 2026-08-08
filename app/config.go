@@ -15,17 +15,6 @@ type Config struct {
 	appendFsync    string
 }
 
-// creates new config with defaults
-func newConfig(dir string) *Config {
-	return &Config{
-		dir:            dir,
-		appendOnly:     "no",
-		appendDirName:  "appendonlydir",
-		appendFileName: "appendonly.aof",
-		appendFsync:    "everysec",
-	}
-}
-
 // gets one config value by name
 func (c *Config) get(option string) (string, bool) {
 	switch strings.ToLower(option) {

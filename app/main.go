@@ -17,7 +17,6 @@ func main() {
 
 	// grab port from --port flag, 6379 default
 	port := flag.Int("port", 6379, "Port to listen on")
-	flag.Parse()
 
 	// gets workign directory to store config for AOF Persistence
 	workingDir, err := os.Getwd()
@@ -26,7 +25,22 @@ func main() {
 		os.Exit(1)
 	}
 
-	config := newConfig(workingDir)
+	// command line flags for AOF config
+	dir := flag.String("dir", workingDir, "AOF directory")
+	appendOnly := flag.String("appendonly", "no", "Enable AOF persistence")
+	appendDirName := flag.String("appenddirname", "appendonlydir", "AOF subdirectory")
+	appendFileName := flag.String("appendfilename", "appendonly.aof", "AOF file name")
+	appendFsync := flag.String("appendfsync", "everysec", "AOF sync policy")
+
+	flag.Parse()
+
+	config := &Config{
+		dir:            *dir,
+		appendOnly:     *appendOnly,
+		appendDirName:  *appendDirName,
+		appendFileName: *appendFileName,
+		appendFsync:    *appendFsync,
+	}
 
 	// listen for TCP connections on selected port and all network interfaces
 	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
