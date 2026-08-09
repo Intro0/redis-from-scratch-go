@@ -42,7 +42,9 @@ func main() {
 		appendFsync:    *appendFsync,
 	}
 
-	if err := initializeAOF(config); err != nil {
+	// init AOF file depending on config
+	aof, err := initializeAOF(config)
+	if err != nil {
 		fmt.Println("Failed to initialize AOF:", err)
 		os.Exit(1)
 	}
@@ -61,6 +63,6 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn, storage, pubsub, config)
+		go handleConnection(conn, storage, pubsub, config, aof)
 	}
 }

@@ -25,7 +25,7 @@ func handleEcho(conn net.Conn, args []string) {
 }
 
 // store a string val (not streams), with an option for time expiry (PX for ms, EX for s)
-func handleSet(conn net.Conn, args []string, storage *Storage) {
+func handleSet(conn net.Conn, args []string, storage *Storage, aof *AOF) {
 	expiry := time.Time{}
 	if len(args) > 3 {
 		switch strings.ToUpper(args[3]) {
@@ -47,6 +47,16 @@ func handleSet(conn net.Conn, args []string, storage *Storage) {
 	}
 	key := args[1]
 	value := args[2]
+
+	// adds command to AOF file
+	if aof != nil {
+		if err := aof.appendCommand(args); err != nil {
+			fmt.Println("Error writing AOF:", err)
+			conn.Write([]byte("-ERR failed to write AOF\r\n"))
+			return
+		}
+	}
+
 	storage.Set(key, StringEntry{value: value, expiry: expiry})
 	conn.Write([]byte("+OK\r\n"))
 }

@@ -9,7 +9,7 @@ import (
 )
 
 // handles commands from each client
-func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub, config *Config) {
+func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub, config *Config, aof *AOF) {
 	// buffered reader keeps unread bytes for the next RESP command
 	reader := bufio.NewReader(conn)
 
@@ -48,7 +48,7 @@ func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub, config *C
 		case "echo":
 			handleEcho(conn, args)
 		case "set":
-			handleSet(conn, args, storage)
+			handleSet(conn, args, storage, aof)
 		case "get":
 			handleGet(conn, args, storage)
 		case "type":
