@@ -65,8 +65,25 @@ func main() {
 			fmt.Println("Failed to create AOF file:", err)
 			os.Exit(1)
 		}
+
 		if err := file.Close(); err != nil {
 			fmt.Println("Failed to close AOF file:", err)
+			os.Exit(1)
+		}
+
+		// create manifest file path and contents, and write the file
+		manifestFile := filepath.Join(
+			aofDir,
+			config.appendFileName+".manifest",
+		)
+
+		manifestContents := fmt.Sprintf(
+			"file %s.1.incr.aof seq 1 type i\n",
+			config.appendFileName,
+		)
+
+		if err := os.WriteFile(manifestFile, []byte(manifestContents), 0644); err != nil {
+			fmt.Println("Failed to create AOF manifest:", err)
 			os.Exit(1)
 		}
 	}
