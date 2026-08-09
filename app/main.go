@@ -52,6 +52,23 @@ func main() {
 			fmt.Println("Failed to create AOF directory:", err)
 			os.Exit(1)
 		}
+
+		// create aofFile path
+		aofFile := filepath.Join(
+			aofDir,
+			config.appendFileName+".1.incr.aof",
+		)
+
+		// create file if doesnt exist, otherwise append to the end
+		file, err := os.OpenFile(aofFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Println("Failed to create AOF file:", err)
+			os.Exit(1)
+		}
+		if err := file.Close(); err != nil {
+			fmt.Println("Failed to close AOF file:", err)
+			os.Exit(1)
+		}
 	}
 
 	// listen for TCP connections on selected port and all network interfaces
