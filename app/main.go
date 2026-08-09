@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"net"
 	"os"
-	"path/filepath"
-	"strings"
 )
 
 func main() {
@@ -44,48 +42,9 @@ func main() {
 		appendFsync:    *appendFsync,
 	}
 
-	// checks for appendOnly flag, if so, creates AOF directory with rx all, rwx for owner
-	if strings.ToLower(config.appendOnly) == "yes" {
-		aofDir := filepath.Join(config.dir, config.appendDirName)
-
-		if err := os.MkdirAll(aofDir, 0755); err != nil {
-			fmt.Println("Failed to create AOF directory:", err)
-			os.Exit(1)
-		}
-
-		// create aofFile path
-		aofFile := filepath.Join(
-			aofDir,
-			config.appendFileName+".1.incr.aof",
-		)
-
-		// create file if doesnt exist, otherwise append to the end
-		file, err := os.OpenFile(aofFile, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0644)
-		if err != nil {
-			fmt.Println("Failed to create AOF file:", err)
-			os.Exit(1)
-		}
-
-		if err := file.Close(); err != nil {
-			fmt.Println("Failed to close AOF file:", err)
-			os.Exit(1)
-		}
-
-		// create manifest file path and contents, and write the file
-		manifestFile := filepath.Join(
-			aofDir,
-			config.appendFileName+".manifest",
-		)
-
-		manifestContents := fmt.Sprintf(
-			"file %s.1.incr.aof seq 1 type i\n",
-			config.appendFileName,
-		)
-
-		if err := os.WriteFile(manifestFile, []byte(manifestContents), 0644); err != nil {
-			fmt.Println("Failed to create AOF manifest:", err)
-			os.Exit(1)
-		}
+	if err := initializeAOF(config); err != nil {
+		fmt.Println("Failed to initialize AOF:", err)
+		os.Exit(1)
 	}
 
 	// listen for TCP connections on selected port and all network interfaces
