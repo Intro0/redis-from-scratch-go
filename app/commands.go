@@ -11,24 +11,23 @@ import (
 // basic ping command, respong to PING with PONG
 func handlePing(conn net.Conn, subscribed bool) {
 	if subscribed {
-		conn.Write([]byte("*2\r\n$4\r\npong\r\n$0\r\n\r\n"))
+		conn.Write(encodeBulkStringArray([]string{"pong", ""}))
 		return
 	}
-	conn.Write([]byte("+PONG\r\n"))
+	conn.Write(encodeSimpleString("PONG"))
 }
 
 // basic echo command, echos back input as RESP string
 func handleEcho(conn net.Conn, args []string) {
 	input := args[1]
-	response := fmt.Sprintf("$%d\r\n%s\r\n", len(input), input)
-	conn.Write([]byte(response))
+	conn.Write(encodeBulkString(input))
 }
 
 func handleSet(conn net.Conn, args []string, storage *Storage, aof *AOF) {
 	key, entry, err := parseSet(args)
 	if err != nil {
 		fmt.Println("Error applying SET:", err)
-		conn.Write([]byte("-ERR invalid SET command\r\n"))
+		conn.Write(encodeError("ERR invalid SET command"))
 		return
 	}
 
@@ -36,13 +35,13 @@ func handleSet(conn net.Conn, args []string, storage *Storage, aof *AOF) {
 	if aof != nil {
 		if err := aof.appendCommand(args); err != nil {
 			fmt.Println("Error writing AOF:", err)
-			conn.Write([]byte("-ERR failed to write AOF\r\n"))
+			conn.Write(encodeError("ERR failed to write AOF"))
 			return
 		}
 	}
 
 	storage.Set(key, entry)
-	conn.Write([]byte("+OK\r\n"))
+	conn.Write(encodeSimpleString("OK"))
 }
 
 // validates SET args and creates string entry with optional expiry
@@ -98,21 +97,20 @@ func handleGet(conn net.Conn, args []string, storage *Storage) {
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("value not found")
-		conn.Write([]byte("$-1\r\n"))
+		conn.Write(encodeNullBulkString())
 		return
 	}
 	input, ok := val.(StringEntry)
 	if !ok {
-		conn.Write([]byte("$-1\r\n"))
+		conn.Write(encodeNullBulkString())
 		return
 	}
 	if !input.expiry.IsZero() && time.Now().After(input.expiry) {
 		fmt.Println("value expired")
-		conn.Write([]byte("$-1\r\n"))
+		conn.Write(encodeNullBulkString())
 		return
 	}
-	response := fmt.Sprintf("$%d\r\n%s\r\n", len(input.value), input.value)
-	conn.Write([]byte(response))
+	conn.Write(encodeBulkString(input.value))
 }
 
 // returns type for a key, none if missing
@@ -121,13 +119,13 @@ func handleType(conn net.Conn, args []string, storage *Storage) {
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("key not found")
-		conn.Write([]byte("+none\r\n"))
+		conn.Write(encodeSimpleString("none"))
 		return
 	}
-	conn.Write([]byte("+" + val.Type() + "\r\n"))
+	conn.Write(encodeSimpleString(val.Type()))
 }
 
 // returns metadata
 func handleInfo(conn net.Conn) {
-	conn.Write([]byte("$11\r\nrole:master\r\n"))
+	conn.Write(encodeBulkString("role:master"))
 }

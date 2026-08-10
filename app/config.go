@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"net"
 	"strings"
 )
@@ -36,23 +35,16 @@ func (c *Config) get(option string) (string, bool) {
 // returns a config option and its value
 func handleConfig(conn net.Conn, args []string, config *Config) {
 	if len(args) != 3 || strings.ToLower(args[1]) != "get" {
-		conn.Write([]byte("-ERR unsupported CONFIG command\r\n"))
+		conn.Write(encodeError("ERR unsupported CONFIG command"))
 		return
 	}
 
 	option := strings.ToLower(args[2])
 	value, ok := config.get(option)
 	if !ok {
-		conn.Write([]byte("-ERR unsupported CONFIG option\r\n"))
+		conn.Write(encodeError("ERR unsupported CONFIG option"))
 		return
 	}
 
-	response := fmt.Sprintf(
-		"*2\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
-		len(option),
-		option,
-		len(value),
-		value,
-	)
-	conn.Write([]byte(response))
+	conn.Write(encodeBulkStringArray([]string{option, value}))
 }
