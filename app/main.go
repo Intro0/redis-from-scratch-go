@@ -49,6 +49,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := replayAOF(aof, storage); err != nil {
+		fmt.Println("Failed to replay AOF:", err)
+		os.Exit(1)
+	}
+
 	// listen for TCP connections on selected port and all network interfaces
 	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
 	if err != nil {

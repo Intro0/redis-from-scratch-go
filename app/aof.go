@@ -1,16 +1,21 @@
 package main
 
 import (
+	"bufio"
+	"errors"
 	"fmt"
+	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 	"sync"
 )
 
-// holds active AOF file, sync setting, and mutex for concurrent writes
+// holds active AOF file, path, sync setting, and mutex for concurrent writes
 type AOF struct {
 	file        *os.File
+	path        string
 	appendFsync string
 	mu          sync.Mutex
 }
@@ -53,7 +58,7 @@ func initializeAOF(config *Config) (*AOF, error) {
 	)
 
 	// only creates manifest if one does not already exist
-	if _, err := os.Stat(manifestFile); os.IsNotExist(err) {
+	if _, err := os.Stat(manifestFile); errors.Is(err, fs.ErrNotExist) {
 		manifestContents := fmt.Sprintf(
 			"file %s seq 1 type i\n",
 			defaultAOFName,
@@ -86,6 +91,7 @@ func initializeAOF(config *Config) (*AOF, error) {
 
 	return &AOF{
 		file:        file,
+		path:        activeAOFFile,
 		appendFsync: config.appendFsync,
 	}, nil
 }
@@ -109,6 +115,43 @@ func readActiveAOFName(manifestFile string) (string, error) {
 		}
 	}
 	return "", fmt.Errorf("active incremental AOF file not found")
+}
+
+// reads saved RESP commands and restores them in storage
+func replayAOF(aof *AOF, storage *Storage) error {
+	if aof == nil {
+		return nil
+	}
+
+	file, err := os.Open(aof.path)
+	if err != nil {
+		return fmt.Errorf("open AOF for replay: %w", err)
+	}
+	defer file.Close()
+
+	reader := bufio.NewReader(file)
+
+	for {
+		args, err := readCommand(reader)
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return fmt.Errorf("read AOF command: %w", err)
+		}
+		if len(args) == 0 {
+			return fmt.Errorf("empty AOF command")
+		}
+
+		switch strings.ToLower(args[0]) {
+		case "set":
+			if err := applySet(args, storage); err != nil {
+				return fmt.Errorf("replay SET command: %w", err)
+			}
+		default:
+			return fmt.Errorf("unsupported AOF command: %s", args[0])
+		}
+	}
 }
 
 // appends RESP command to AOF and syncs when configured

@@ -24,31 +24,15 @@ func handleEcho(conn net.Conn, args []string) {
 	conn.Write([]byte(response))
 }
 
-// store a string val (not streams), with an option for time expiry (PX for ms, EX for s)
 func handleSet(conn net.Conn, args []string, storage *Storage, aof *AOF) {
-	expiry := time.Time{}
-	if len(args) > 3 {
-		switch strings.ToUpper(args[3]) {
-		case "PX":
-			ms, err := strconv.Atoi(args[4])
-			if err != nil {
-				fmt.Println("Error with PX: ", err.Error())
-			}
-			expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
-		case "EX":
-			s, err := strconv.Atoi(args[4])
-			if err != nil {
-				fmt.Println("Error with EX: ", err.Error())
-			}
-			expiry = time.Now().Add(time.Duration(s) * time.Second)
-		default:
-			fmt.Println("invalid syntax")
-		}
+	key, entry, err := parseSet(args)
+	if err != nil {
+		fmt.Println("Error applying SET:", err)
+		conn.Write([]byte("-ERR invalid SET command\r\n"))
+		return
 	}
-	key := args[1]
-	value := args[2]
 
-	// adds command to AOF file
+	// saves valid command before acknowledging successful write
 	if aof != nil {
 		if err := aof.appendCommand(args); err != nil {
 			fmt.Println("Error writing AOF:", err)
@@ -57,8 +41,55 @@ func handleSet(conn net.Conn, args []string, storage *Storage, aof *AOF) {
 		}
 	}
 
-	storage.Set(key, StringEntry{value: value, expiry: expiry})
+	storage.Set(key, entry)
 	conn.Write([]byte("+OK\r\n"))
+}
+
+// validates SET args and creates string entry with optional expiry
+func parseSet(args []string) (string, StringEntry, error) {
+	if len(args) < 3 {
+		return "", StringEntry{}, fmt.Errorf("SET requires a key and value")
+	}
+
+	expiry := time.Time{}
+	if len(args) > 3 {
+		if len(args) != 5 {
+			return "", StringEntry{}, fmt.Errorf("invalid SET expiry arguments")
+		}
+
+		switch strings.ToUpper(args[3]) {
+		case "PX":
+			ms, err := strconv.Atoi(args[4])
+			if err != nil {
+				return "", StringEntry{}, fmt.Errorf("invalid PX expiry: %w", err)
+			}
+			expiry = time.Now().Add(time.Duration(ms) * time.Millisecond)
+		case "EX":
+			s, err := strconv.Atoi(args[4])
+			if err != nil {
+				return "", StringEntry{}, fmt.Errorf("invalid EX expiry: %w", err)
+			}
+			expiry = time.Now().Add(time.Duration(s) * time.Second)
+		default:
+			return "", StringEntry{}, fmt.Errorf("unsupported SET option: %s", args[3])
+		}
+	}
+
+	return args[1], StringEntry{
+		value:  args[2],
+		expiry: expiry,
+	}, nil
+}
+
+// stores parsed SET command in memory without writing AOF or response
+func applySet(args []string, storage *Storage) error {
+	key, entry, err := parseSet(args)
+	if err != nil {
+		return err
+	}
+
+	storage.Set(key, entry)
+	return nil
 }
 
 // gets value if not expired, only works w/ StringEntry, Streams has XRANGE and XREAD
