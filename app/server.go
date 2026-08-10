@@ -8,8 +8,16 @@ import (
 	"strings"
 )
 
+// holds shared state used by all client connections
+type Server struct {
+	storage *Storage
+	pubsub  *PubSub
+	config  *Config
+	aof     *AOF
+}
+
 // handles commands from each client
-func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub, config *Config, aof *AOF) {
+func (s *Server) handleConnection(conn net.Conn) {
 	// buffered reader keeps unread bytes for the next RESP command
 	reader := bufio.NewReader(conn)
 
@@ -48,29 +56,29 @@ func handleConnection(conn net.Conn, storage *Storage, pubsub *PubSub, config *C
 		case "echo":
 			handleEcho(conn, args)
 		case "set":
-			handleSet(conn, args, storage, aof)
+			handleSet(conn, args, s.storage, s.aof)
 		case "get":
-			handleGet(conn, args, storage)
+			handleGet(conn, args, s.storage)
 		case "type":
-			handleType(conn, args, storage)
+			handleType(conn, args, s.storage)
 		case "xadd":
-			handleXAdd(conn, args, storage)
+			handleXAdd(conn, args, s.storage)
 		case "xrange":
-			handleXRange(conn, args, storage)
+			handleXRange(conn, args, s.storage)
 		case "xread":
-			handleXRead(conn, args, storage)
+			handleXRead(conn, args, s.storage)
 		case "info":
 			handleInfo(conn)
 		case "subscribe":
-			handleSubscribe(conn, args, subscriptions, pubsub)
+			handleSubscribe(conn, args, subscriptions, s.pubsub)
 			subscribed = true
 		case "publish":
-			handlePublish(conn, args, pubsub)
+			handlePublish(conn, args, s.pubsub)
 		case "unsubscribe":
-			handleUnsubscribe(conn, args, subscriptions, pubsub)
+			handleUnsubscribe(conn, args, subscriptions, s.pubsub)
 			subscribed = len(subscriptions) > 0
 		case "config":
-			handleConfig(conn, args, config)
+			handleConfig(conn, args, s.config)
 		default:
 			fmt.Println("Unknown Syntax")
 		}

@@ -54,6 +54,13 @@ func main() {
 		os.Exit(1)
 	}
 
+	server := &Server{
+		storage: storage,
+		pubsub:  pubsub,
+		config:  config,
+		aof:     aof,
+	}
+
 	// listen for TCP connections on selected port and all network interfaces
 	l, err := net.Listen("tcp", fmt.Sprintf("0.0.0.0:%d", *port))
 	if err != nil {
@@ -68,6 +75,6 @@ func main() {
 			fmt.Println("Error accepting connection: ", err.Error())
 			os.Exit(1)
 		}
-		go handleConnection(conn, storage, pubsub, config, aof)
+		go server.handleConnection(conn)
 	}
 }
