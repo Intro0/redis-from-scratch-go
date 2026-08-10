@@ -26,62 +26,89 @@ func initializeAOF(config *Config) (*AOF, error) {
 		return nil, nil
 	}
 
-	aofDir := filepath.Join(config.dir, config.appendDirName)
-
-	if err := os.MkdirAll(aofDir, 0755); err != nil {
-		return nil, fmt.Errorf("create AOF directory: %w", err)
+	aofDir, err := ensureAOFDirectory(config)
+	if err != nil {
+		return nil, err
 	}
 
-	// creates default incremental AOF file if missing
 	defaultAOFName := config.appendFileName + ".1.incr.aof"
 	defaultAOFFile := filepath.Join(aofDir, defaultAOFName)
-
-	// O_CREATE creates file if missing, O_APPEND writes at end, O_WRONLY allows writes
-	// 0644 gives owner read/write access and group/others read-only access
-	file, err := os.OpenFile(
-		defaultAOFFile,
-		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
-		0644,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("create default AOF file: %w", err)
-	}
-
-	if err := file.Close(); err != nil {
-		return nil, fmt.Errorf("close default AOF file: %w", err)
+	if err := ensureAOFFile(defaultAOFFile); err != nil {
+		return nil, err
 	}
 
 	manifestFile := filepath.Join(
 		aofDir,
 		config.appendFileName+".manifest",
 	)
-
-	// only creates manifest if one does not already exist
-	if _, err := os.Stat(manifestFile); errors.Is(err, fs.ErrNotExist) {
-		manifestContents := fmt.Sprintf(
-			"file %s seq 1 type i\n",
-			defaultAOFName,
-		)
-
-		if err := os.WriteFile(manifestFile, []byte(manifestContents), 0644); err != nil {
-			return nil, fmt.Errorf("create AOF manifest: %w", err)
-		}
-	} else if err != nil {
-		return nil, fmt.Errorf("check AOF manifest: %w", err)
+	if err := ensureAOFManifest(manifestFile, defaultAOFName); err != nil {
+		return nil, err
 	}
 
-	// reads manifest to find incremental AOF file used for writes
 	activeAOFName, err := readActiveAOFName(manifestFile)
 	if err != nil {
 		return nil, err
 	}
 
 	activeAOFFile := filepath.Join(aofDir, activeAOFName)
+	return openAOF(activeAOFFile, config.appendFsync)
+}
 
-	// opens manifest-selected file for future command writes
-	file, err = os.OpenFile(
-		activeAOFFile,
+// creates AOF directory and returns its path
+func ensureAOFDirectory(config *Config) (string, error) {
+	aofDir := filepath.Join(config.dir, config.appendDirName)
+
+	if err := os.MkdirAll(aofDir, 0755); err != nil {
+		return "", fmt.Errorf("create AOF directory: %w", err)
+	}
+
+	return aofDir, nil
+}
+
+// creates empty AOF file if it does not already exist
+func ensureAOFFile(aofFile string) error {
+	// O_CREATE creates file if missing, O_APPEND writes at end, O_WRONLY allows writes
+	// 0644 gives owner read/write access and group/others read-only access
+	file, err := os.OpenFile(
+		aofFile,
+		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
+		0644,
+	)
+	if err != nil {
+		return fmt.Errorf("create AOF file: %w", err)
+	}
+
+	if err := file.Close(); err != nil {
+		return fmt.Errorf("close AOF file: %w", err)
+	}
+
+	return nil
+}
+
+// creates default manifest only when one does not already exist
+func ensureAOFManifest(manifestFile string, defaultAOFName string) error {
+	if _, err := os.Stat(manifestFile); err == nil {
+		return nil
+	} else if !errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("check AOF manifest: %w", err)
+	}
+
+	manifestContents := fmt.Sprintf(
+		"file %s seq 1 type i\n",
+		defaultAOFName,
+	)
+
+	if err := os.WriteFile(manifestFile, []byte(manifestContents), 0644); err != nil {
+		return fmt.Errorf("create AOF manifest: %w", err)
+	}
+
+	return nil
+}
+
+// opens manifest-selected file for future command writes
+func openAOF(aofFile string, appendFsync string) (*AOF, error) {
+	file, err := os.OpenFile(
+		aofFile,
 		os.O_CREATE|os.O_APPEND|os.O_WRONLY,
 		0644,
 	)
@@ -91,8 +118,8 @@ func initializeAOF(config *Config) (*AOF, error) {
 
 	return &AOF{
 		file:        file,
-		path:        activeAOFFile,
-		appendFsync: config.appendFsync,
+		path:        aofFile,
+		appendFsync: appendFsync,
 	}, nil
 }
 
