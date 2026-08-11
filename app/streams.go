@@ -93,59 +93,77 @@ func parseRangeID(value string, isEnd bool) StreamID {
 // appends an entry to a Stream
 func handleXAdd(conn net.Conn, args []string, storage *Storage) {
 	key := args[1]
-	entryID := args[2]
-	if entryID == "0-0" {
-		conn.Write([]byte("-ERR The ID specified in XADD must be greater than 0-0\r\n"))
+	val, ok := storage.Get(key)
+	stream := Stream{}
+	if ok {
+		stream = val.(Stream)
+	}
+
+	entryID, id := resolveXAddID(args[2], stream)
+	if err := validateXAddID(entryID, id, stream); err != nil {
+		conn.Write(encodeError(err.Error()))
 		return
 	}
 
-	id, sequenceWildcard, millisecondsWildcard := parseXAddID(entryID)
-	val, ok := storage.Get(key)
+	entry := StreamEntry{id: entryID, values: parseStreamValues(args[3:])}
+	stream.entries = append(stream.entries, entry)
+	storage.Set(key, stream)
+	conn.Write(encodeBulkString(entryID))
+}
+
+// resolves wildcard parts of XADD ID using the last stream entry
+func resolveXAddID(value string, stream Stream) (string, StreamID) {
+	id, sequenceWildcard, millisecondsWildcard := parseXAddID(value)
 	if millisecondsWildcard {
 		id.milliseconds = int(time.Now().UnixMilli())
 	}
-	if sequenceWildcard {
-		id.sequence = 0
-		if ok {
-			stream := val.(Stream)
-			if len(stream.entries) > 0 {
-				lastEntry := stream.entries[len(stream.entries)-1]
-				lastID, _, _ := parseXAddID(lastEntry.id)
-				if lastID.milliseconds == id.milliseconds {
-					id.sequence = lastID.sequence + 1
-				}
-			}
-		}
-		if id.milliseconds == 0 && id.sequence == 0 {
-			id.sequence = 1
-		}
-		entryID = id.String()
+
+	if !sequenceWildcard {
+		return value, id
 	}
 
-	if ok {
-		stream := val.(Stream)
-		if len(stream.entries) > 0 {
-			lastEntry := stream.entries[len(stream.entries)-1]
-			lastID, _, _ := parseXAddID(lastEntry.id)
-			if id.compare(lastID) <= 0 {
-				conn.Write([]byte("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"))
-				return
-			}
-		}
+	id.sequence = 0
+	if lastID, ok := lastStreamID(stream); ok && lastID.milliseconds == id.milliseconds {
+		id.sequence = lastID.sequence + 1
 	}
+	if id.milliseconds == 0 && id.sequence == 0 {
+		id.sequence = 1
+	}
+
+	return id.String(), id
+}
+
+// returns last stream ID when stream has entries
+func lastStreamID(stream Stream) (StreamID, bool) {
+	if len(stream.entries) == 0 {
+		return StreamID{}, false
+	}
+
+	lastEntry := stream.entries[len(stream.entries)-1]
+	id, _, _ := parseXAddID(lastEntry.id)
+	return id, true
+}
+
+// validates XADD ID is greater than zero and last stream ID
+func validateXAddID(entryID string, id StreamID, stream Stream) error {
+	if entryID == "0-0" {
+		return fmt.Errorf("ERR The ID specified in XADD must be greater than 0-0")
+	}
+
+	if lastID, ok := lastStreamID(stream); ok && id.compare(lastID) <= 0 {
+		return fmt.Errorf("ERR The ID specified in XADD is equal or smaller than the target stream top item")
+	}
+
+	return nil
+}
+
+// converts XADD field-value arguments into entry values
+func parseStreamValues(args []string) map[string]string {
 	values := make(map[string]string)
-	for i := 3; i+1 < len(args); i += 2 {
+	for i := 0; i+1 < len(args); i += 2 {
 		values[args[i]] = args[i+1]
 	}
-	entry := StreamEntry{id: entryID, values: values}
-	if !ok {
-		storage.Set(key, Stream{entries: []StreamEntry{entry}})
-	} else {
-		stream := val.(Stream)
-		stream.entries = append(stream.entries, entry)
-		storage.Set(key, stream)
-	}
-	conn.Write(encodeBulkString(entryID))
+	return values
 }
 
 func handleXRange(conn net.Conn, args []string, storage *Storage) {
