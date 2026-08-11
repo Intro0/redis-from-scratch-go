@@ -22,81 +22,112 @@ type Stream struct {
 
 func (s Stream) Type() string { return "stream" }
 
-// parse a stream ID given in XADD, including wildcard
-func parseEntryID(id string) (ms int, seq int, seqIsWildcard bool, msIsWildcard bool) {
-	if id == "*" {
-		seqIsWildcard = true
-		msIsWildcard = true
+// stores timestamp and sequence parts of a stream entry ID
+type StreamID struct {
+	milliseconds int
+	sequence     int
+}
+
+// converts stream ID into Redis timestamp-sequence format
+func (id StreamID) String() string {
+	return fmt.Sprintf("%d-%d", id.milliseconds, id.sequence)
+}
+
+// compares stream IDs by timestamp first, then sequence
+func (id StreamID) compare(other StreamID) int {
+	if id.milliseconds < other.milliseconds {
+		return -1
+	}
+	if id.milliseconds > other.milliseconds {
+		return 1
+	}
+	if id.sequence < other.sequence {
+		return -1
+	}
+	if id.sequence > other.sequence {
+		return 1
+	}
+	return 0
+}
+
+// parses stream ID given in XADD, including wildcard parts
+func parseXAddID(value string) (id StreamID, sequenceWildcard bool, millisecondsWildcard bool) {
+	if value == "*" {
+		sequenceWildcard = true
+		millisecondsWildcard = true
 		return
 	}
-	parts := strings.Split(id, "-")
-	ms, _ = strconv.Atoi(parts[0])
+
+	parts := strings.Split(value, "-")
+	id.milliseconds, _ = strconv.Atoi(parts[0])
 	if parts[1] == "*" {
-		seqIsWildcard = true
+		sequenceWildcard = true
 	} else {
-		seq, _ = strconv.Atoi(parts[1])
+		id.sequence, _ = strconv.Atoi(parts[1])
 	}
 	return
 }
 
 // parse XRANGE into timestamp and sequence
 // - and + represent start and end of a Stream
-func parseRangeID(id string, isEnd bool) (ms int, seq int) {
-	if id == "-" {
-		return 0, 0
+func parseRangeID(value string, isEnd bool) StreamID {
+	if value == "-" {
+		return StreamID{}
 	}
-	if id == "+" {
-		return math.MaxInt, math.MaxInt
+	if value == "+" {
+		return StreamID{milliseconds: math.MaxInt, sequence: math.MaxInt}
 	}
-	if strings.Contains(id, "-") {
-		parts := strings.Split(id, "-")
-		ms, _ = strconv.Atoi(parts[0])
-		seq, _ = strconv.Atoi(parts[1])
-		return
+	if strings.Contains(value, "-") {
+		id, _, _ := parseXAddID(value)
+		return id
 	}
-	ms, _ = strconv.Atoi(id)
+
+	milliseconds, _ := strconv.Atoi(value)
 	if isEnd {
-		seq = math.MaxInt
+		return StreamID{milliseconds: milliseconds, sequence: math.MaxInt}
 	}
-	return
+
+	return StreamID{milliseconds: milliseconds}
 }
 
 // appends an entry to a Stream
 func handleXAdd(conn net.Conn, args []string, storage *Storage) {
 	key := args[1]
-	id := args[2]
-	if id == "0-0" {
+	entryID := args[2]
+	if entryID == "0-0" {
 		conn.Write([]byte("-ERR The ID specified in XADD must be greater than 0-0\r\n"))
 		return
 	}
-	ms, seq, seqIsWildcard, msIsWildcard := parseEntryID(id)
+
+	id, sequenceWildcard, millisecondsWildcard := parseXAddID(entryID)
 	val, ok := storage.Get(key)
-	if msIsWildcard {
-		ms = int(time.Now().UnixMilli())
+	if millisecondsWildcard {
+		id.milliseconds = int(time.Now().UnixMilli())
 	}
-	if seqIsWildcard {
-		seq = 0
+	if sequenceWildcard {
+		id.sequence = 0
 		if ok {
 			stream := val.(Stream)
 			if len(stream.entries) > 0 {
 				lastEntry := stream.entries[len(stream.entries)-1]
-				lastMs, lastSeq, _, _ := parseEntryID(lastEntry.id)
-				if lastMs == ms {
-					seq = lastSeq + 1
+				lastID, _, _ := parseXAddID(lastEntry.id)
+				if lastID.milliseconds == id.milliseconds {
+					id.sequence = lastID.sequence + 1
 				}
 			}
 		}
-		if ms == 0 && seq == 0 {
-			seq = 1
+		if id.milliseconds == 0 && id.sequence == 0 {
+			id.sequence = 1
 		}
-		id = fmt.Sprintf("%d-%d", ms, seq)
+		entryID = id.String()
 	}
+
 	if ok {
 		stream := val.(Stream)
 		if len(stream.entries) > 0 {
 			lastEntry := stream.entries[len(stream.entries)-1]
-			lastMs, lastSeq, _, _ := parseEntryID(lastEntry.id)
-			if ms < lastMs || (ms == lastMs && seq <= lastSeq) {
+			lastID, _, _ := parseXAddID(lastEntry.id)
+			if id.compare(lastID) <= 0 {
 				conn.Write([]byte("-ERR The ID specified in XADD is equal or smaller than the target stream top item\r\n"))
 				return
 			}
@@ -106,7 +137,7 @@ func handleXAdd(conn net.Conn, args []string, storage *Storage) {
 	for i := 3; i+1 < len(args); i += 2 {
 		values[args[i]] = args[i+1]
 	}
-	entry := StreamEntry{id: id, values: values}
+	entry := StreamEntry{id: entryID, values: values}
 	if !ok {
 		storage.Set(key, Stream{entries: []StreamEntry{entry}})
 	} else {
@@ -114,8 +145,7 @@ func handleXAdd(conn net.Conn, args []string, storage *Storage) {
 		stream.entries = append(stream.entries, entry)
 		storage.Set(key, stream)
 	}
-	response := fmt.Sprintf("$%d\r\n%s\r\n", len(id), id)
-	conn.Write([]byte(response))
+	conn.Write(encodeBulkString(entryID))
 }
 
 func handleXRange(conn net.Conn, args []string, storage *Storage) {
@@ -129,13 +159,12 @@ func handleXRange(conn net.Conn, args []string, storage *Storage) {
 		return
 	}
 	stream := val.(Stream)
-	startMS, startSeq := parseRangeID(startID, false)
-	endMS, endSeq := parseRangeID(endID, true)
+	start := parseRangeID(startID, false)
+	end := parseRangeID(endID, true)
 	var results []StreamEntry
 	for _, entry := range stream.entries {
-		entryMS, entrySeq, _, _ := parseEntryID(entry.id)
-		if (entryMS > startMS || (entryMS == startMS && entrySeq >= startSeq)) &&
-			(entryMS < endMS || (entryMS == endMS && entrySeq <= endSeq)) {
+		entryID, _, _ := parseXAddID(entry.id)
+		if entryID.compare(start) >= 0 && entryID.compare(end) <= 0 {
 			results = append(results, entry)
 		}
 	}
@@ -158,11 +187,11 @@ func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults
 			continue
 		}
 		stream := val.(Stream)
-		startMS, startSeq := parseRangeID(ID, false)
+		start := parseRangeID(ID, false)
 		var results []StreamEntry
 		for _, entry := range stream.entries {
-			entryMS, entrySeq := parseRangeID(entry.id, false)
-			if entryMS > startMS || (entryMS == startMS && entrySeq > startSeq) {
+			entryID := parseRangeID(entry.id, false)
+			if entryID.compare(start) > 0 {
 				results = append(results, entry)
 			}
 		}
