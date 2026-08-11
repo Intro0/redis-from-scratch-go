@@ -168,33 +168,50 @@ func parseStreamValues(args []string) map[string]string {
 
 func handleXRange(conn net.Conn, args []string, storage *Storage) {
 	key := args[1]
-	startID := args[2]
-	endID := args[3]
 	val, ok := storage.Get(key)
 	if !ok {
 		fmt.Println("key not found")
-		conn.Write([]byte("+none\r\n"))
+		conn.Write(encodeSimpleString("none"))
 		return
 	}
+
 	stream := val.(Stream)
-	start := parseRangeID(startID, false)
-	end := parseRangeID(endID, true)
-	var results []StreamEntry
+	start := parseRangeID(args[2], false)
+	end := parseRangeID(args[3], true)
+	entries := streamEntriesInRange(stream, start, end)
+	conn.Write(encodeStreamEntries(entries))
+}
+
+// returns entries within inclusive stream ID range
+func streamEntriesInRange(stream Stream, start StreamID, end StreamID) []StreamEntry {
+	var entries []StreamEntry
+
 	for _, entry := range stream.entries {
 		entryID, _, _ := parseXAddID(entry.id)
 		if entryID.compare(start) >= 0 && entryID.compare(end) <= 0 {
-			results = append(results, entry)
+			entries = append(entries, entry)
 		}
 	}
+
+	return entries
+}
+
+// encodes stream entries as nested RESP arrays
+func encodeStreamEntries(entries []StreamEntry) []byte {
 	var response strings.Builder
-	fmt.Fprintf(&response, "*%d\r\n", len(results))
-	for _, entry := range results {
-		fmt.Fprintf(&response, "*2\r\n$%d\r\n%s\r\n*%d\r\n", len(entry.id), entry.id, len(entry.values)*2)
-		for k, v := range entry.values {
-			fmt.Fprintf(&response, "$%d\r\n%s\r\n$%d\r\n%s\r\n", len(k), k, len(v), v)
+
+	fmt.Fprintf(&response, "*%d\r\n", len(entries))
+	for _, entry := range entries {
+		fmt.Fprint(&response, "*2\r\n")
+		response.Write(encodeBulkString(entry.id))
+		fmt.Fprintf(&response, "*%d\r\n", len(entry.values)*2)
+		for field, value := range entry.values {
+			response.Write(encodeBulkString(field))
+			response.Write(encodeBulkString(value))
 		}
 	}
-	conn.Write([]byte(response.String()))
+
+	return []byte(response.String())
 }
 
 func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults [][]StreamEntry, hasResult bool) {

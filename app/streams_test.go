@@ -181,3 +181,43 @@ func TestParseStreamValues(t *testing.T) {
 		t.Errorf("values = %v, want %v", got, want)
 	}
 }
+
+func TestStreamEntriesInRange(t *testing.T) {
+	stream := Stream{entries: []StreamEntry{
+		{id: "1-0"},
+		{id: "2-0"},
+		{id: "3-0"},
+	}}
+
+	got := streamEntriesInRange(
+		stream,
+		StreamID{milliseconds: 2},
+		StreamID{milliseconds: 3},
+	)
+	want := []StreamEntry{
+		{id: "2-0"},
+		{id: "3-0"},
+	}
+
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("entries = %#v, want %#v", got, want)
+	}
+}
+
+func TestEncodeStreamEntries(t *testing.T) {
+	entries := []StreamEntry{
+		{
+			id: "1-0",
+			values: map[string]string{
+				"temp": "18",
+			},
+		},
+	}
+
+	got := string(encodeStreamEntries(entries))
+	want := "*1\r\n*2\r\n$3\r\n1-0\r\n*2\r\n$4\r\ntemp\r\n$2\r\n18\r\n"
+
+	if got != want {
+		t.Errorf("stream entries = %q, want %q", got, want)
+	}
+}
