@@ -241,17 +241,57 @@ func getStreamEntries(keys []string, IDs []string, storage *Storage) (allResults
 	return
 }
 
-func handleXRead(conn net.Conn, args []string, storage *Storage) {
-	blockTimeout := -1
+// stores parsed XREAD timeout, stream keys, and starting IDs
+type XReadRequest struct {
+	blockTimeout int
+	keys         []string
+	startIDs     []string
+}
+
+// parses XREAD arguments with optional BLOCK timeout
+func parseXReadRequest(args []string) (XReadRequest, error) {
+	request := XReadRequest{blockTimeout: -1}
 	streamsIndex := 1
-	if strings.ToUpper(args[1]) == "BLOCK" {
-		blockTimeout, _ = strconv.Atoi(args[2])
+
+	if len(args) > 1 && strings.EqualFold(args[1], "BLOCK") {
+		if len(args) < 4 {
+			return XReadRequest{}, fmt.Errorf("invalid XREAD BLOCK arguments")
+		}
+
+		timeout, err := strconv.Atoi(args[2])
+		if err != nil {
+			return XReadRequest{}, fmt.Errorf("invalid XREAD block timeout: %w", err)
+		}
+
+		request.blockTimeout = timeout
 		streamsIndex = 3
 	}
+
+	if len(args) <= streamsIndex || !strings.EqualFold(args[streamsIndex], "STREAMS") {
+		return XReadRequest{}, fmt.Errorf("XREAD requires STREAMS")
+	}
+
 	streamArgs := args[streamsIndex+1:]
-	numStreams := len(streamArgs) / 2
-	keys := streamArgs[:numStreams]
-	IDs := streamArgs[numStreams:]
+	if len(streamArgs) == 0 || len(streamArgs)%2 != 0 {
+		return XReadRequest{}, fmt.Errorf("XREAD requires matching stream keys and IDs")
+	}
+
+	streamCount := len(streamArgs) / 2
+	request.keys = append([]string(nil), streamArgs[:streamCount]...)
+	request.startIDs = append([]string(nil), streamArgs[streamCount:]...)
+	return request, nil
+}
+
+func handleXRead(conn net.Conn, args []string, storage *Storage) {
+	request, err := parseXReadRequest(args)
+	if err != nil {
+		conn.Write(encodeError("ERR invalid XREAD command"))
+		return
+	}
+
+	blockTimeout := request.blockTimeout
+	keys := request.keys
+	IDs := request.startIDs
 	for i, id := range IDs {
 		if id == "$" {
 			val, ok := storage.Get(keys[i])

@@ -221,3 +221,57 @@ func TestEncodeStreamEntries(t *testing.T) {
 		t.Errorf("stream entries = %q, want %q", got, want)
 	}
 }
+
+func TestParseXReadRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want XReadRequest
+	}{
+		{
+			name: "single stream without block",
+			args: []string{"XREAD", "STREAMS", "orders", "0-0"},
+			want: XReadRequest{
+				blockTimeout: -1,
+				keys:         []string{"orders"},
+				startIDs:     []string{"0-0"},
+			},
+		},
+		{
+			name: "multiple streams with block",
+			args: []string{"XREAD", "BLOCK", "5000", "STREAMS", "orders", "payments", "0-0", "1-0"},
+			want: XReadRequest{
+				blockTimeout: 5000,
+				keys:         []string{"orders", "payments"},
+				startIDs:     []string{"0-0", "1-0"},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := parseXReadRequest(test.args)
+			if err != nil {
+				t.Fatalf("parseXReadRequest returned an error: %v", err)
+			}
+			if !reflect.DeepEqual(got, test.want) {
+				t.Errorf("request = %#v, want %#v", got, test.want)
+			}
+		})
+	}
+}
+
+func TestParseXReadRequestRejectsInvalidArguments(t *testing.T) {
+	tests := [][]string{
+		{"XREAD", "BLOCK"},
+		{"XREAD", "BLOCK", "not-a-number", "STREAMS", "orders", "0-0"},
+		{"XREAD", "orders", "0-0"},
+		{"XREAD", "STREAMS", "orders"},
+	}
+
+	for _, args := range tests {
+		if _, err := parseXReadRequest(args); err == nil {
+			t.Errorf("parseXReadRequest(%v) returned no error", args)
+		}
+	}
+}
