@@ -19,7 +19,7 @@ redis-cli -p 6380
 
 ## Supported commands
 
-`PING`, `ECHO`, `SET`, `GET`, `TYPE`, `INFO`, `XADD`, `XRANGE`, `XREAD`, `SUBSCRIBE`, `UNSUBSCRIBE`, `PUBLISH`, and `CONFIG GET` for AOF settings.
+`PING`, `ECHO`, `SET`, `SETEX`, `GET`, `TYPE`, `INFO`, `XADD`, `XRANGE`, `XREAD`, `SUBSCRIBE`, `UNSUBSCRIBE`, `PUBLISH`, and `CONFIG GET` for AOF settings.
 
 ```redis
 # strings and expiry
