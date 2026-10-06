@@ -39,6 +39,12 @@ SUBSCRIBE notifications
 PUBLISH notifications "new order received"
 ```
 
+## goSocial cache integration
+
+`goSocial` will use this server for its local user-profile cache. `PING`, `GET`, and `SET ... EX` already work for the first cache step.
+
+Before that API invalidates cached profiles, implement `DEL`. Keep the first integration on database `0` with no password because this server does not yet support `SELECT` or `AUTH`. Expired keys behave as misses, but the in-memory store should eventually remove them too.
+
 The server also accepts AOF-related startup options. At this point these configure the server and create the append-only directory when enabled; command persistence comes next.
 
 ```bash
