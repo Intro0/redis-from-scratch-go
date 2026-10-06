@@ -44,6 +44,16 @@ func handleSet(conn net.Conn, args []string, storage *Storage, aof *AOF) {
 	conn.Write(encodeSimpleString("OK"))
 }
 
+func handleSetEX(conn net.Conn, args []string, storage *Storage, aof *AOF) {
+	if len(args) != 4 {
+		conn.Write(encodeError("ERR wrong number of arguments for 'setex' command"))
+		return
+	}
+
+	setArgs := []string{"SET", args[1], args[3], "EX", args[2]}
+	handleSet(conn, setArgs, storage, aof)
+}
+
 // validates SET args and creates string entry with optional expiry
 func parseSet(args []string) (string, StringEntry, error) {
 	if len(args) < 3 {

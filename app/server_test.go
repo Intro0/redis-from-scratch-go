@@ -33,6 +33,21 @@ func TestServerRoutesSetAndGet(t *testing.T) {
 	assertResponse(t, clientConn, "$5\r\nKenny\r\n")
 }
 
+func TestServerRoutesSetEXAndGet(t *testing.T) {
+	serverConn, clientConn := net.Pipe()
+	defer serverConn.Close()
+	defer clientConn.Close()
+
+	server := newTestServer()
+	go server.handleConnection(serverConn)
+
+	writeCommand(t, clientConn, "*4\r\n$5\r\nSETEX\r\n$4\r\nname\r\n$2\r\n60\r\n$5\r\nKenny\r\n")
+	assertResponse(t, clientConn, "+OK\r\n")
+
+	writeCommand(t, clientConn, "*2\r\n$3\r\nGET\r\n$4\r\nname\r\n")
+	assertResponse(t, clientConn, "$5\r\nKenny\r\n")
+}
+
 // creates server dependencies needed for connection tests
 func newTestServer() *Server {
 	return &Server{

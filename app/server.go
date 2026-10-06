@@ -57,6 +57,8 @@ func (s *Server) handleConnection(conn net.Conn) {
 			handleEcho(conn, args)
 		case "set":
 			handleSet(conn, args, s.storage, s.aof)
+		case "setex":
+			handleSetEX(conn, args, s.storage, s.aof)
 		case "get":
 			handleGet(conn, args, s.storage)
 		case "type":
